@@ -1,5 +1,6 @@
 package com.ontik.countai.ui.screens
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -48,13 +49,25 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import com.ontik.countai.BuildConfig
+import com.ontik.countai.R
 import com.ontik.countai.domain.model.AppLanguage
 import com.ontik.countai.ui.theme.DangerRed
 import com.ontik.countai.ui.theme.OntikAmberAccent
 import com.ontik.countai.ui.theme.OntikGreenPrimary
 import com.ontik.countai.ui.viewmodel.CountViewModel
 import kotlinx.coroutines.launch
+
+/**
+ * Reads the Google Web Client ID from the generated R.string.default_web_client_id resource
+ * (automatically generated from app/google-services.json by com.google.gms.google-services).
+ */
+fun resolveDefaultWebClientId(context: Context): String {
+    return try {
+        context.getString(R.string.default_web_client_id).trim()
+    } catch (_: Throwable) {
+        ""
+    }
+}
 
 @Composable
 fun AuthLoginScreen(
@@ -189,14 +202,14 @@ fun AuthLoginScreen(
             }
         }
 
-        // Continue with Google via Credential Manager API
+        // Continue with Google via Credential Manager API using R.string.default_web_client_id
         OutlinedButton(
             onClick = {
-                val webClientId = BuildConfig.GOOGLE_WEB_CLIENT_ID
+                val webClientId = resolveDefaultWebClientId(context)
                 if (webClientId.isBlank()) {
                     Toast.makeText(
                         context,
-                        if (isBn) "GOOGLE_WEB_CLIENT_ID gradle.properties-এ যোগ করুন বা গেস্ট মোডে চালান" else "Set GOOGLE_WEB_CLIENT_ID in gradle.properties or use Guest Mode",
+                        if (isBn) "Firebase Console-এ Google Sign-In চালু করে নতুন google-services.json নিন অথবা গেস্ট মোডে চালান" else "Enable Google Sign-In in Firebase Console to generate default_web_client_id, or continue as Guest",
                         Toast.LENGTH_LONG
                     ).show()
                     return@OutlinedButton
@@ -215,11 +228,12 @@ fun AuthLoginScreen(
                         val googleToken = GoogleIdTokenCredential.createFrom(result.credential.data).idToken
                         viewModel.signInWithGoogleToken(googleToken, onContinueAsGuestOrSuccess)
                     } catch (e: Throwable) {
-                        Toast.makeText(
-                            context,
-                            e.localizedMessage ?: "Google Sign-In cancelled",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        val msg = if (isBn) {
+                            "Google সাইন-ইন বাতিল হয়েছে বা ইন্টারনেট সংযোগ নেই"
+                        } else {
+                            e.localizedMessage ?: "Google Sign-In cancelled"
+                        }
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 }
             },
@@ -258,10 +272,9 @@ fun AuthLoginScreen(
 fun AuthSignUpScreen(
     viewModel: CountViewModel,
     onBackToLogin: () -> Unit,
-    onSignUpSuccess: () -> Unit,
-    onOpenTerms: () -> Unit,
-    onOpenPrivacy: () -> Unit
+    onSignUpSuccess: () -> Unit
 ) {
+    val context = LocalContext.current
     val settings by viewModel.settings.collectAsState()
     val isLoading by viewModel.authLoading.collectAsState()
     val errorBanner by viewModel.authErrorBanner.collectAsState()
@@ -272,16 +285,19 @@ fun AuthSignUpScreen(
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var acceptedTerms by remember { mutableStateOf(false) }
-    var inlineError by remember { mutableStateOf<String?>(null) }
 
-    // Password strength score [0.0 .. 1.0]
+    var nameError by remember { mutableStateOf<String?>(null) }
+    var emailError by remember { mutableStateOf<String?>(null) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var confirmError by remember { mutableStateOf<String?>(null) }
+
     val strengthScore = remember(password) {
-        var score = 0f
-        if (password.length >= 8) score += 0.35f
-        if (password.any { it.isUpperCase() }) score += 0.20f
-        if (password.any { it.isDigit() }) score += 0.25f
-        if (password.any { !it.isLetterOrDigit() }) score += 0.20f
-        score.coerceIn(0f, 1f)
+        var score = 0
+        if (password.length >= 8) score++
+        if (password.any { it.isUpperCase() }) score++
+        if (password.any { it.isDigit() }) score++
+        if (password.any { !it.isLetterOrDigit() }) score++
+        score
     }
 
     Column(
@@ -292,32 +308,24 @@ fun AuthSignUpScreen(
             .navigationBarsPadding()
             .padding(24.dp)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = if (isBn) "নতুন অ্যাকাউন্ট তৈরি করুন" else "Create Your Account",
             style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = if (isBn) {
-                "গেস্ট মোডের আগের সব লোকাল হিস্ট্রি স্বয়ংক্রিয়ভাবে আপনার নতুন অ্যাকাউন্টে যুক্ত হয়ে যাবে।"
-            } else {
-                "Your existing local guest history will automatically migrate to your account."
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            fontWeight = FontWeight.ExtraBold,
+            color = OntikGreenPrimary
         )
 
-        val banner = inlineError ?: errorBanner?.let { if (isBn) it.second else it.first }
-        if (banner != null) {
+        errorBanner?.let { (en, bn) ->
             Card(
                 colors = CardDefaults.cardColors(containerColor = DangerRed.copy(alpha = 0.14f)),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = banner,
+                    text = if (isBn) bn else en,
                     color = DangerRed,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(12.dp)
@@ -327,8 +335,13 @@ fun AuthSignUpScreen(
 
         OutlinedTextField(
             value = name,
-            onValueChange = { name = it; inlineError = null },
-            label = { Text(if (isBn) "আপনার নাম (Name)" else "Full Name") },
+            onValueChange = {
+                name = it
+                nameError = null
+            },
+            label = { Text(if (isBn) "আপনার নাম (Full Name)" else "Full Name") },
+            isError = nameError != null,
+            supportingText = { nameError?.let { Text(it, color = DangerRed) } },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
@@ -336,8 +349,13 @@ fun AuthSignUpScreen(
 
         OutlinedTextField(
             value = email,
-            onValueChange = { email = it; inlineError = null },
+            onValueChange = {
+                email = it
+                emailError = null
+            },
             label = { Text(if (isBn) "ইমেইল (Email)" else "Email Address") },
+            isError = emailError != null,
+            supportingText = { emailError?.let { Text(it, color = DangerRed) } },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
@@ -345,88 +363,113 @@ fun AuthSignUpScreen(
 
         OutlinedTextField(
             value = password,
-            onValueChange = { password = it; inlineError = null },
-            label = { Text(if (isBn) "পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)" else "Password (min 8 characters)") },
+            onValueChange = {
+                password = it
+                passwordError = null
+            },
+            label = { Text(if (isBn) "পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)" else "Password (min 8 chars)") },
             visualTransformation = PasswordVisualTransformation(),
+            isError = passwordError != null,
+            supportingText = { passwordError?.let { Text(it, color = DangerRed) } },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
         )
 
-        // Password Strength Meter
-        LinearProgressIndicator(
-            progress = { strengthScore },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp),
-            color = when {
-                strengthScore < 0.4f -> DangerRed
-                strengthScore < 0.75f -> OntikAmberAccent
+        // Password strength indicator
+        if (password.isNotEmpty()) {
+            val strengthProgress = (strengthScore / 4f).coerceIn(0.15f, 1f)
+            val strengthColor = when {
+                strengthScore <= 1 -> DangerRed
+                strengthScore == 2 -> OntikAmberAccent
                 else -> OntikGreenPrimary
             }
-        )
+            val strengthLabel = when {
+                strengthScore <= 1 -> if (isBn) "দুর্বল (Weak)" else "Weak"
+                strengthScore == 2 -> if (isBn) "মাঝারি (Medium)" else "Medium"
+                else -> if (isBn) "শক্তিশালী (Strong)" else "Strong"
+            }
+            Column(modifier = Modifier.fillMaxWidth()) {
+                LinearProgressIndicator(
+                    progress = { strengthProgress },
+                    color = strengthColor,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                )
+                Text(
+                    text = strengthLabel,
+                    fontSize = 11.sp,
+                    color = strengthColor,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
 
         OutlinedTextField(
             value = confirmPassword,
-            onValueChange = { confirmPassword = it; inlineError = null },
+            onValueChange = {
+                confirmPassword = it
+                confirmError = null
+            },
             label = { Text(if (isBn) "পাসওয়ার্ড নিশ্চিত করুন (Confirm Password)" else "Confirm Password") },
             visualTransformation = PasswordVisualTransformation(),
+            isError = confirmError != null,
+            supportingText = { confirmError?.let { Text(it, color = DangerRed) } },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
         )
 
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { acceptedTerms = !acceptedTerms },
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
                 checked = acceptedTerms,
                 onCheckedChange = { acceptedTerms = it }
             )
-            Column {
-                Text(
-                    text = if (isBn) "আমি শর্তাবলী (Terms) ও গোপনীয়তা নীতি (Privacy Policy) মেনে নিচ্ছি" else "I accept the Terms of Service & Privacy Policy",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = if (isBn) "Terms" else "Terms",
-                        color = OntikGreenPrimary,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable { onOpenTerms() }
-                    )
-                    Text(
-                        text = if (isBn) "Privacy Policy" else "Privacy Policy",
-                        color = OntikGreenPrimary,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable { onOpenPrivacy() }
-                    )
-                }
-            }
+            Text(
+                text = if (isBn) "আমি শর্তাবলী ও গোপনীয়তা নীতি মেনে নিচ্ছি (Accept Terms & Privacy Policy)" else "I accept the Terms of Service & Privacy Policy",
+                fontSize = 13.sp
+            )
         }
 
         Button(
             onClick = {
-                when {
-                    name.trim().length < 2 -> {
-                        inlineError = if (isBn) "অনুগ্রহ করে আপনার নাম লিখুন" else "Please enter your name"
-                    }
-                    !email.contains("@") -> {
-                        inlineError = if (isBn) "সঠিক ইমেইল ঠিকানা দিন" else "Please enter a valid email"
-                    }
-                    password.length < 8 -> {
-                        inlineError = if (isBn) "পাসওয়ার্ড কমপক্ষে ৮ অক্ষরের হতে হবে" else "Password must be at least 8 characters"
-                    }
-                    password != confirmPassword -> {
-                        inlineError = if (isBn) "দুটি পাসওয়ার্ড মেলেনি" else "Passwords do not match"
-                    }
-                    !acceptedTerms -> {
-                        inlineError = if (isBn) "শর্তাবলী ও প্রাইভেসি পলিসি চেকবক্সে টিক দিন" else "Please accept Terms & Privacy Policy"
-                    }
-                    else -> {
-                        viewModel.signUpWithEmail(name, email, password, onSignUpSuccess)
-                    }
+                if (name.trim().length < 2) {
+                    nameError = if (isBn) "আপনার নাম লিখুন" else "Enter your name"
+                    return@Button
+                }
+                if (!email.contains("@")) {
+                    emailError = if (isBn) "সঠিক ইমেইল দিন" else "Enter a valid email"
+                    return@Button
+                }
+                if (password.length < 8) {
+                    passwordError = if (isBn) "পাসওয়ার্ড কমপক্ষে ৮ অক্ষরের হতে হবে" else "Password must be at least 8 characters"
+                    return@Button
+                }
+                if (password != confirmPassword) {
+                    confirmError = if (isBn) "দুইটি পাসওয়ার্ড মেলেনি" else "Passwords do not match"
+                    return@Button
+                }
+                if (!acceptedTerms) {
+                    Toast.makeText(
+                        context,
+                        if (isBn) "অনুগ্রহ করে শর্তাবলী ও গোপনীয়তা নীতিতে টিক দিন" else "Please accept Terms & Privacy Policy",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@Button
+                }
+                viewModel.signUpWithEmail(name, email, password) {
+                    Toast.makeText(
+                        context,
+                        if (isBn) "ভেরিফিকেশন ইমেইল পাঠানো হয়েছে!" else "Verification email sent!",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    onSignUpSuccess()
                 }
             },
             enabled = !isLoading,
@@ -439,15 +482,18 @@ fun AuthSignUpScreen(
             if (isLoading) {
                 CircularProgressIndicator(color = Color.White)
             } else {
-                Text(if (isBn) "অ্যাকাউন্ট তৈরি করুন (Sign Up)" else "Create Account", fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (isBn) "অ্যাকাউন্ট তৈরি করুন (Sign Up)" else "Create Account",
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 
-        TextButton(
-            onClick = onBackToLogin,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
-        ) {
-            Text(if (isBn) "আগে থেকেই অ্যাকাউন্ট আছে? লগইন করুন" else "Already have an account? Sign In")
+        TextButton(onClick = onBackToLogin) {
+            Text(
+                text = if (isBn) "আগে থেকেই অ্যাকাউন্ট আছে? লগইন করুন" else "Already have an account? Sign In",
+                color = OntikGreenPrimary
+            )
         }
     }
 }

@@ -304,12 +304,18 @@ class AuthRepository @Inject constructor(
      * 3. Deletes Firebase Auth user record.
      * 4. Clears all local Room history & resets plan state.
      */
-    suspend fun deleteAccountAndAllData(currentPasswordIfEmailUser: String?): AuthResult = withContext(Dispatchers.IO) {
+    suspend fun deleteAccountAndAllData(
+        currentPasswordIfEmailUser: String?,
+        googleIdTokenIfGoogleUser: String? = null
+    ): AuthResult = withContext(Dispatchers.IO) {
         try {
             val user = firebaseAuth?.currentUser
             if (user != null) {
                 if (!currentPasswordIfEmailUser.isNullOrBlank() && !user.email.isNullOrBlank()) {
                     val cred = EmailAuthProvider.getCredential(user.email!!, currentPasswordIfEmailUser)
+                    user.reauthenticate(cred).await()
+                } else if (!googleIdTokenIfGoogleUser.isNullOrBlank()) {
+                    val cred = GoogleAuthProvider.getCredential(googleIdTokenIfGoogleUser, null)
                     user.reauthenticate(cred).await()
                 }
 

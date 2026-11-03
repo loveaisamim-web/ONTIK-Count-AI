@@ -301,11 +301,15 @@ class CountViewModel @Inject constructor(
         }
     }
 
-    fun deleteAccountAndData(passwordIfEmail: String?, onDeleted: (Boolean, String) -> Unit) {
+    fun deleteAccountAndData(
+        passwordIfEmail: String?,
+        googleIdTokenIfGoogle: String? = null,
+        onDeleted: (Boolean, String) -> Unit
+    ) {
         viewModelScope.launch {
             _authLoading.value = true
             val lang = settings.value.language
-            when (val res = authRepository.deleteAccountAndAllData(passwordIfEmail)) {
+            when (val res = authRepository.deleteAccountAndAllData(passwordIfEmail, googleIdTokenIfGoogle)) {
                 is AuthResult.Success -> {
                     _authLoading.value = false
                     billingRepository.logOutRevenueCat()

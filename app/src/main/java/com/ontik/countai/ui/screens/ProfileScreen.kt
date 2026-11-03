@@ -40,6 +40,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,11 +51,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.ontik.countai.domain.model.AppLanguage
 import com.ontik.countai.ui.theme.DangerRed
 import com.ontik.countai.ui.theme.OntikAmberAccent
 import com.ontik.countai.ui.theme.OntikGreenPrimary
 import com.ontik.countai.ui.viewmodel.CountViewModel
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -67,6 +73,7 @@ fun ProfileScreen(
     onNavigateToPaywall: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val user by viewModel.currentUser.collectAsState()
     val planState by viewModel.planState.collectAsState()
     val settings by viewModel.settings.collectAsState()
@@ -359,13 +366,46 @@ fun ProfileScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deleteAccountAndData(
-                            passwordIfEmail = if (user.isGoogleAccount) null else reauthPassword
-                        ) { ok, msg ->
-                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                            if (ok) {
-                                showDeleteAccountDialog = false
-                                onBack()
+                        if (user.isGoogleAccount) {
+                            scope.launch {
+                                val webClientId = resolveDefaultWebClientId(context)
+                                var googleIdToken: String? = null
+                                if (webClientId.isNotBlank()) {
+                                    try {
+                                        val cm = CredentialManager.create(context)
+                                        val googleIdOption = GetGoogleIdOption.Builder()
+                                            .setFilterByAuthorizedAccounts(false)
+                                            .setServerClientId(webClientId)
+                                            .build()
+                                        val req = GetCredentialRequest.Builder()
+                                            .addCredentialOption(googleIdOption)
+                                            .build()
+                                        val res = cm.getCredential(context, req)
+                                        googleIdToken = GoogleIdTokenCredential.createFrom(res.credential.data).idToken
+                                    } catch (_: Throwable) {
+                                    }
+                                }
+                                viewModel.deleteAccountAndData(
+                                    passwordIfEmail = null,
+                                    googleIdTokenIfGoogle = googleIdToken
+                                ) { ok, msg ->
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                    if (ok) {
+                                        showDeleteAccountDialog = false
+                                        onBack()
+                                    }
+                                }
+                            }
+                        } else {
+                            viewModel.deleteAccountAndData(
+                                passwordIfEmail = reauthPassword,
+                                googleIdTokenIfGoogle = null
+                            ) { ok, msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                if (ok) {
+                                    showDeleteAccountDialog = false
+                                    onBack()
+                                }
                             }
                         }
                     },
