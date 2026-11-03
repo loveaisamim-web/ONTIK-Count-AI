@@ -106,7 +106,7 @@ class AuthRepository @Inject constructor(
 
             val db = firestore
             if (db != null) {
-                val snap = db.collection("users").doc(fbUser.uid).get().await()
+                val snap = db.collection("users").document(fbUser.uid).get().await()
                 if (snap.exists()) {
                     val planStr = snap.getString("plan") ?: "free"
                     val tier = if (planStr == "pro") PlanTier.PRO else PlanTier.FREE
@@ -259,7 +259,7 @@ class AuthRepository @Inject constructor(
             if (user != null) {
                 val req = UserProfileChangeRequest.Builder().setDisplayName(trimmed).build()
                 user.updateProfile(req).await()
-                firestore?.collection("users")?.doc(user.uid)?.set(
+                firestore?.collection("users")?.document(user.uid)?.set(
                     mapOf("name" to trimmed),
                     SetOptions.merge()
                 )?.await()
@@ -275,7 +275,7 @@ class AuthRepository @Inject constructor(
     suspend fun syncDailyCountToFirestore(dateIso: String, count: Int) = withContext(Dispatchers.IO) {
         try {
             val uid = firebaseAuth?.currentUser?.uid ?: return@withContext
-            firestore?.collection("users")?.doc(uid)?.set(
+            firestore?.collection("users")?.document(uid)?.set(
                 mapOf(
                     "dailyCount" to mapOf(
                         "date" to dateIso,
@@ -316,15 +316,15 @@ class AuthRepository @Inject constructor(
                 val uid = user.uid
                 val db = firestore
                 if (db != null) {
-                    val sessionsSnap = db.collection("users").doc(uid).collection("sessions").get().await()
+                    val sessionsSnap = db.collection("users").document(uid).collection("sessions").get().await()
                     for (doc in sessionsSnap.documents) {
                         doc.reference.delete().await()
                     }
-                    val presetsSnap = db.collection("users").doc(uid).collection("presets").get().await()
+                    val presetsSnap = db.collection("users").document(uid).collection("presets").get().await()
                     for (doc in presetsSnap.documents) {
                         doc.reference.delete().await()
                     }
-                    db.collection("users").doc(uid).delete().await()
+                    db.collection("users").document(uid).delete().await()
                 }
                 user.delete().await()
             }
@@ -348,7 +348,7 @@ class AuthRepository @Inject constructor(
     ) {
         try {
             val db = firestore ?: return
-            val docRef = db.collection("users").doc(uid)
+            val docRef = db.collection("users").document(uid)
             val existing = docRef.get().await()
 
             val baseData = mutableMapOf<String, Any?>(

@@ -61,7 +61,7 @@ class SyncWorker @AssistedInject constructor(
         }
 
         return try {
-            val sessionsCollection = db.collection("users").doc(uid).collection("sessions")
+            val sessionsCollection = db.collection("users").document(uid).collection("sessions")
 
             // 1. Upload unsynced local Room rows
             val unsynced = countRepository.getUnsyncedSessions()

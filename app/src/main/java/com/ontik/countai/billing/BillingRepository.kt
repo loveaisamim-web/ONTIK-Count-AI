@@ -14,6 +14,7 @@ import com.revenuecat.purchases.Purchases
 import com.revenuecat.purchases.PurchasesConfiguration
 import com.revenuecat.purchases.PurchasesError
 import com.revenuecat.purchases.PurchasesErrorCode
+import com.revenuecat.purchases.interfaces.LogInCallback
 import com.revenuecat.purchases.interfaces.PurchaseCallback
 import com.revenuecat.purchases.interfaces.ReceiveCustomerInfoCallback
 import com.revenuecat.purchases.interfaces.ReceiveOfferingsCallback
@@ -86,16 +87,18 @@ class BillingRepository @Inject constructor(
             isConfigured = false
         }
     }
-
     fun linkFirebaseUser(uid: String) {
         if (!isConfigured || uid.isBlank()) return
         try {
             Purchases.sharedInstance.logIn(
                 uid,
-                onSuccess = { customerInfo, _ ->
-                    applyCustomerInfo(customerInfo)
-                },
-                onError = { _ -> }
+                object : LogInCallback {
+                    override fun onReceived(customerInfo: CustomerInfo, created: Boolean) {
+                        applyCustomerInfo(customerInfo)
+                    }
+                    override fun onError(error: PurchasesError) {
+                    }
+                }
             )
         } catch (_: Throwable) {
         }
