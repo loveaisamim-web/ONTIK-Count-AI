@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -34,9 +35,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ontik.countai.data.local.CountSessionEntity
+import com.ontik.countai.ui.theme.AppStrings
 import com.ontik.countai.ui.theme.CardBorderGray
 import com.ontik.countai.ui.theme.DangerRed
 import com.ontik.countai.ui.theme.OntikGreenDark
@@ -58,6 +61,8 @@ fun HistoryScreen(
     onBack: () -> Unit
 ) {
     val sessions by viewModel.historySessions.collectAsState()
+    val settings by viewModel.settings.collectAsState()
+    val lang = settings.language
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy • hh:mm:ss a", Locale.US) }
 
     Column(
@@ -65,27 +70,31 @@ fun HistoryScreen(
             .fillMaxSize()
             .background(WhiteBackground)
             .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Top Bar
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
                 IconButton(onClick = onBack) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
                 Column {
                     Text(
-                        text = "Counting History",
-                        style = MaterialTheme.typography.headlineMedium,
+                        text = AppStrings.historyTitle(lang),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
                         color = TextPrimaryDark
                     )
                     Text(
-                        text = "${sessions.size} saved sessions • Total objects: ${sessions.sumOf { it.finalCount }}",
+                        text = AppStrings.historySummary(lang, sessions.size, sessions.sumOf { it.finalCount }),
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondarySlate
                     )
@@ -103,7 +112,6 @@ fun HistoryScreen(
             }
         }
 
-        // Export Buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -114,12 +122,12 @@ fun HistoryScreen(
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
             ) {
                 Icon(OntikIcons.Table, contentDescription = null)
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Export CSV", fontWeight = FontWeight.Bold)
+                Text(AppStrings.exportCsvBtn(lang), fontWeight = FontWeight.Bold)
             }
 
             OutlinedButton(
@@ -128,12 +136,12 @@ fun HistoryScreen(
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, OntikGreenPrimary)
             ) {
                 Icon(OntikIcons.Document, contentDescription = null, tint = OntikGreenPrimary)
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Export TXT", color = OntikGreenPrimary, fontWeight = FontWeight.Bold)
+                Text(AppStrings.exportTxtBtn(lang), color = OntikGreenPrimary, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -154,14 +162,16 @@ fun HistoryScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "No Saved Counting Sessions Yet",
+                        text = AppStrings.emptyHistoryTitle(lang),
                         style = MaterialTheme.typography.titleLarge,
-                        color = TextPrimaryDark
+                        color = TextPrimaryDark,
+                        textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Tap the save button on the Live Counting or Photo Counting screen to save a session with its timestamp, model details, and count breakdown.",
-                        style = MaterialTheme.typography.bodyMedium
+                        text = AppStrings.emptyHistoryDesc(lang),
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
                     )
                 }
             }
@@ -227,13 +237,14 @@ private fun SessionHistoryCard(
                     )
                 }
                 Spacer(modifier = Modifier.height(6.dp))
+                val adjStr = if (session.manualDelta >= 0) "+${session.manualDelta}" else "${session.manualDelta}"
                 Text(
-                    text = "AI: ${session.aiDetectedCount} • Manual: ${if (session.manualDelta >= 0) "+${session.manualDelta}" else "${session.manualDelta}"} • ${session.direction}",
+                    text = "Detected: ${session.aiDetectedCount} • Manual: $adjStr • ${session.direction}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextPrimaryDark
                 )
                 Text(
-                    text = "Model: ${session.modelName} (${(session.confidenceThreshold * 100).toInt()}%)",
+                    text = "Engine: ${session.modelName} (${(session.confidenceThreshold * 100).toInt()}%)",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondarySlate
                 )

@@ -28,14 +28,6 @@ jobs:
           gradle-version: '8.7'
           cache-read-only: false
 
-      - name: Ensure Gradle Wrapper Permissions & Bootstrap
-        run: |
-          chmod +x ./gradlew
-          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            mkdir -p gradle/wrapper
-            curl -fsSL https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
-          fi
-
       - name: Build Debug APK with Stacktrace
         run: |
           gradle assembleDebug --stacktrace --no-daemon

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +28,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Slider
@@ -44,9 +46,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.ontik.countai.domain.model.AppLanguage
 import com.ontik.countai.domain.model.CountingDirection
 import com.ontik.countai.domain.model.ModelEngineState
 import com.ontik.countai.domain.model.ModelProfile
+import com.ontik.countai.ui.theme.AppStrings
 import com.ontik.countai.ui.theme.CardBorderGray
 import com.ontik.countai.ui.theme.OntikGreenDark
 import com.ontik.countai.ui.theme.OntikGreenLight
@@ -65,6 +69,7 @@ fun SettingsScreen(
 ) {
     val settings by viewModel.settings.collectAsState()
     val liveState by viewModel.liveState.collectAsState()
+    val lang = settings.language
     var importFeedback by remember { mutableStateOf<String?>(null) }
 
     val modelFilePicker = rememberLauncherForActivityResult(
@@ -82,9 +87,10 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(WhiteBackground)
             .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 8.dp)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Header
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -93,19 +99,165 @@ fun SettingsScreen(
             }
             Column {
                 Text(
-                    text = "Settings & AI Configuration",
-                    style = MaterialTheme.typography.headlineMedium,
+                    text = AppStrings.settingsTitle(lang),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
                     color = TextPrimaryDark
                 )
                 Text(
-                    text = "Configure small-object TFLite model, sensitivity & line crossing",
+                    text = AppStrings.settingsSubtitle(lang),
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondarySlate
                 )
             }
         }
 
-        // Section 1: Replaceable On-Device AI Model Architecture
+        // Section 0: Language Selection (Bangla & English)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = SoftGraySurface),
+            border = BorderStroke(1.dp, CardBorderGray)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = AppStrings.languageSectionTitle(lang),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextPrimaryDark
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    AppLanguage.entries.forEach { option ->
+                        val selected = settings.language == option
+                        if (selected) {
+                            Button(
+                                onClick = { viewModel.updateLanguage(option) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
+                            ) {
+                                Text(option.nativeName, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = { viewModel.updateLanguage(option) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, CardBorderGray)
+                            ) {
+                                Text(option.nativeName, color = TextPrimaryDark)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section 1: Counting Line Crossing Direction
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = SoftGraySurface),
+            border = BorderStroke(1.dp, CardBorderGray)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = AppStrings.directionSectionTitle(lang),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextPrimaryDark
+                )
+                CountingDirection.entries.forEach { dir ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.updateCountingDirection(dir) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = settings.countingDirection == dir,
+                            onClick = { viewModel.updateCountingDirection(dir) },
+                            colors = RadioButtonDefaults.colors(selectedColor = OntikGreenPrimary)
+                        )
+                        Column(modifier = Modifier.padding(start = 6.dp)) {
+                            Text(text = dir.title(lang), style = MaterialTheme.typography.titleMedium)
+                            Text(text = dir.subtitle(lang), style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section 2: Detection Sensitivity & Overlap Control
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = SoftGraySurface),
+            border = BorderStroke(1.dp, CardBorderGray)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = AppStrings.sensitivitySectionTitle(lang),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextPrimaryDark
+                )
+
+                Text(
+                    text = AppStrings.confidenceLabel(lang, (settings.confidenceThreshold * 100).toInt()),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Slider(
+                    value = settings.confidenceThreshold,
+                    onValueChange = viewModel::updateConfidenceThreshold,
+                    valueRange = 0.10f..0.90f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = OntikGreenPrimary,
+                        activeTrackColor = OntikGreenPrimary
+                    )
+                )
+
+                Text(
+                    text = AppStrings.iouLabel(lang, (settings.iouThreshold * 100).toInt()),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Slider(
+                    value = settings.iouThreshold,
+                    onValueChange = viewModel::updateIouThreshold,
+                    valueRange = 0.20f..0.80f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = OntikGreenPrimary,
+                        activeTrackColor = OntikGreenPrimary
+                    )
+                )
+
+                OutlinedButton(
+                    onClick = viewModel::resetSensitivityDefaults,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, OntikGreenPrimary)
+                ) {
+                    Text(
+                        text = AppStrings.resetSensitivityBtn(lang),
+                        color = OntikGreenPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        // Section 3: AI & Vision Model Engine
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
@@ -117,21 +269,24 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "On-Device AI Model Architecture (TensorFlow Lite / LiteRT)",
+                    text = AppStrings.modelSectionTitle(lang),
                     style = MaterialTheme.typography.titleLarge,
                     color = TextPrimaryDark
                 )
-                Text(
-                    text = "Note: Generic COCO models cannot accurately detect tiny seeds or grains. Use a dedicated YOLOv8/v11 small-object .tflite model trained on seeds/grains/beans.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondarySlate
-                )
 
                 val engineStatusText = when (val st = liveState.modelEngineState) {
-                    is ModelEngineState.Ready -> "Active: ${st.modelName} (${st.inputWidth}x${st.inputHeight}, ${st.outputShapeDescription})"
-                    is ModelEngineState.MissingModelFile -> "Status: Waiting for .tflite model file (${st.expectedPath})"
-                    is ModelEngineState.Error -> "Error: ${st.message}"
-                    ModelEngineState.Uninitialized -> "Status: Uninitialized"
+                    is ModelEngineState.Ready -> {
+                        if (lang == AppLanguage.BANGLA) {
+                            "চালু আছে: ${st.modelName} (${st.inputWidth}x${st.inputHeight})"
+                        } else {
+                            "Active: ${st.modelName} (${st.inputWidth}x${st.inputHeight})"
+                        }
+                    }
+                    is ModelEngineState.FallbackBuiltInReady -> {
+                        if (lang == AppLanguage.BANGLA) st.reasonBn else st.reasonEn
+                    }
+                    is ModelEngineState.Error -> st.message
+                    ModelEngineState.Uninitialized -> "Initializing..."
                 }
 
                 Card(
@@ -162,12 +317,12 @@ fun SettingsScreen(
                         )
                         Column(modifier = Modifier.padding(start = 6.dp)) {
                             Text(
-                                text = profile.title,
+                                text = profile.title(lang),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = TextPrimaryDark
                             )
                             Text(
-                                text = profile.description,
+                                text = profile.subtitle(lang),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondarySlate
                             )
@@ -183,7 +338,7 @@ fun SettingsScreen(
                 ) {
                     Icon(OntikIcons.FileUpload, contentDescription = null)
                     Text(
-                        text = "  Import Custom .tflite Model from Phone Storage",
+                        text = "  ${AppStrings.importModelBtn(lang)}",
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -195,91 +350,6 @@ fun SettingsScreen(
                         color = OntikGreenDark,
                         fontWeight = FontWeight.SemiBold
                     )
-                }
-            }
-        }
-
-        // Section 2: Detection Confidence & Overlap Sensitivity
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = SoftGraySurface),
-            border = BorderStroke(1.dp, CardBorderGray)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Detection Sensitivity & Overlapping Objects",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = TextPrimaryDark
-                )
-
-                Text(
-                    text = "Minimum Confidence Threshold: ${(settings.confidenceThreshold * 100).toInt()}%",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Slider(
-                    value = settings.confidenceThreshold,
-                    onValueChange = viewModel::updateConfidenceThreshold,
-                    valueRange = 0.10f..0.90f,
-                    colors = SliderDefaults.colors(
-                        thumbColor = OntikGreenPrimary,
-                        activeTrackColor = OntikGreenPrimary
-                    )
-                )
-
-                Text(
-                    text = "NMS Overlap IoU Threshold: ${(settings.iouThreshold * 100).toInt()}% (Higher allows closer touching grains)",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Slider(
-                    value = settings.iouThreshold,
-                    onValueChange = viewModel::updateIouThreshold,
-                    valueRange = 0.20f..0.80f,
-                    colors = SliderDefaults.colors(
-                        thumbColor = OntikGreenPrimary,
-                        activeTrackColor = OntikGreenPrimary
-                    )
-                )
-            }
-        }
-
-        // Section 3: Virtual Counting Line Direction
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = SoftGraySurface),
-            border = BorderStroke(1.dp, CardBorderGray)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = "Counting Line Crossing Direction",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = TextPrimaryDark
-                )
-                CountingDirection.entries.forEach { dir ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.updateCountingDirection(dir) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = settings.countingDirection == dir,
-                            onClick = { viewModel.updateCountingDirection(dir) },
-                            colors = RadioButtonDefaults.colors(selectedColor = OntikGreenPrimary)
-                        )
-                        Column(modifier = Modifier.padding(start = 6.dp)) {
-                            Text(text = dir.displayName, style = MaterialTheme.typography.titleMedium)
-                            Text(text = dir.description, style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
                 }
             }
         }
@@ -296,7 +366,7 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Camera & Hardware Options",
+                    text = AppStrings.cameraSectionTitle(lang),
                     style = MaterialTheme.typography.titleLarge,
                     color = TextPrimaryDark
                 )
@@ -307,8 +377,8 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Use Rear Camera", style = MaterialTheme.typography.titleMedium)
-                        Text("Switch off to use front camera where supported", style = MaterialTheme.typography.bodyMedium)
+                        Text(AppStrings.rearCameraTitle(lang), style = MaterialTheme.typography.titleMedium)
+                        Text(AppStrings.rearCameraSub(lang), style = MaterialTheme.typography.bodyMedium)
                     }
                     Switch(
                         checked = settings.useBackCamera,
@@ -323,8 +393,8 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Haptic Tick on Line Crossing", style = MaterialTheme.typography.titleMedium)
-                        Text("Subtle vibration feedback when an object is counted", style = MaterialTheme.typography.bodyMedium)
+                        Text(AppStrings.hapticTitle(lang), style = MaterialTheme.typography.titleMedium)
+                        Text(AppStrings.hapticSub(lang), style = MaterialTheme.typography.bodyMedium)
                     }
                     Switch(
                         checked = settings.hapticFeedbackEnabled,

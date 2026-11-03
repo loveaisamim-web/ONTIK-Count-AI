@@ -20,15 +20,6 @@ import java.nio.channels.FileChannel
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * Production TensorFlow Lite / LiteRT detector supporting:
- * 1. YOLOv5 / YOLOv8 / YOLOv11 output format `[1, 4 + numClasses, numAnchors]` (e.g., [1, 84, 8400] or [1, 5, 8400])
- * 2. YOLOv5 / YOLOv8 transposed output format `[1, numAnchors, 5 + numClasses]` (e.g., [1, 25200, 85] or [1, 8400, 6])
- * 3. TF Lite Object Detection API multi-output format (boxes, classes, scores, numDetections)
- *
- * Strictly zero fake detections: if the model file is not present in assets or local storage,
- * [engineState] reports [ModelEngineState.MissingModelFile] and returns 0 detections with a clear explanation.
- */
 class TFLiteYoloDetector(
     private val context: Context,
     private val profile: ModelProfile,
@@ -42,13 +33,9 @@ class TFLiteYoloDetector(
     private var inputWidth: Int = profile.inputResolution
     private var inputHeight: Int = profile.inputResolution
     private var isInputQuantized: Boolean = false
-    private var inputScale: Float = 1.0f
-    private var inputZeroPoint: Int = 0
 
-    // Reusable buffers to minimize GC pressure on low-RAM Android devices
     private var inputByteBuffer: ByteBuffer? = null
     private var intValues: IntArray? = null
-    private var scaledBitmap: Bitmap? = null
 
     override var engineState: ModelEngineState = ModelEngineState.Uninitialized
         private set
@@ -61,16 +48,22 @@ class TFLiteYoloDetector(
         try {
             labels = loadLabels(profile.labelAssetFile)
 
+            if (profile == ModelProfile.BUILTIN_SMALL_OBJECT_VISION) {
+                engineState = ModelEngineState.Ready(
+                    modelName = "Built-In Smart Vision Engine",
+                    inputWidth = 240,
+                    inputHeight = 240,
+                    isQuantized = false,
+                    outputShapeDescription = "Adaptive Contrast + Connected-Component Segmentation"
+                )
+                return
+            }
+
             val modelBufferAndName = loadModelByteBuffer()
             if (modelBufferAndName == null) {
-                val expected = if (!customModelFilePath.isNullOrBlank()) {
-                    customModelFilePath
-                } else {
-                    "app/src/main/assets/${profile.defaultAssetFile}"
-                }
-                engineState = ModelEngineState.MissingModelFile(
-                    expectedPath = expected,
-                    instructions = "No TFLite model file loaded yet. Tap 'Settings -> Import .tflite Model' to select a trained YOLOv8/TFLite model (e.g. trained for seeds/grains) from your phone storage, or bundle '${profile.defaultAssetFile}' in assets."
+                engineState = ModelEngineState.FallbackBuiltInReady(
+                    reasonEn = "Built-In Vision Engine Active (Ready to count objects! You can also import a custom .tflite model in Settings)",
+                    reasonBn = "বিল্ট-ইন ভিশন ইঞ্জিন চালু আছে (বস্তু গণনার জন্য প্রস্তুত! চাইলে সেটিংস থেকে কাস্টম .tflite মডেলও যোগ করতে পারেন)"
                 )
                 return
             }
@@ -85,7 +78,7 @@ class TFLiteYoloDetector(
             interpreter = tflite
 
             val inputTensor = tflite.getInputTensor(0)
-            val inputShape = inputTensor.shape() // typically [1, H, W, 3]
+            val inputShape = inputTensor.shape()
             if (inputShape.size >= 4) {
                 if (inputShape[1] > 0 && inputShape[2] > 0) {
                     inputHeight = inputShape[1]
@@ -93,9 +86,6 @@ class TFLiteYoloDetector(
                 }
             }
             isInputQuantized = inputTensor.dataType() == DataType.UINT8 || inputTensor.dataType() == DataType.INT8
-            val quantParams = inputTensor.quantizationParams()
-            inputScale = if (quantParams.scale > 0f) quantParams.scale else 1.0f
-            inputZeroPoint = quantParams.zeroPoint
 
             val bytesPerChannel = if (isInputQuantized) 1 else 4
             val bufferSize = 1 * inputWidth * inputHeight * 3 * bytesPerChannel
@@ -107,7 +97,7 @@ class TFLiteYoloDetector(
             val outputTensorCount = tflite.outputTensorCount
             val outShapeDesc = (0 until outputTensorCount).joinToString("; ") { idx ->
                 val t = tflite.getOutputTensor(idx)
-                "Out$idx=${t.shape().contentToString()} (${t.dataType()})"
+                "Out$idx=${t.shape().contentToString()}"
             }
 
             engineState = ModelEngineState.Ready(
@@ -118,8 +108,9 @@ class TFLiteYoloDetector(
                 outputShapeDescription = outShapeDesc
             )
         } catch (e: Exception) {
-            engineState = ModelEngineState.Error(
-                message = "Failed to initialize TFLite interpreter: ${e.localizedMessage ?: e.javaClass.simpleName}"
+            engineState = ModelEngineState.FallbackBuiltInReady(
+                reasonEn = "Using Built-In Vision Engine (${e.localizedMessage ?: "fallback"})",
+                reasonBn = "বিল্ট-ইন ভিশন ইঞ্জিন ব্যবহৃত হচ্ছে"
             )
         }
     }
@@ -137,7 +128,6 @@ class TFLiteYoloDetector(
     }
 
     private fun loadModelByteBuffer(): Pair<MappedByteBuffer, String>? {
-        // 1. Check user-imported custom file in app local storage first
         if (!customModelFilePath.isNullOrBlank()) {
             val file = File(customModelFilePath)
             if (file.exists() && file.length() > 64) {
@@ -149,8 +139,7 @@ class TFLiteYoloDetector(
             }
         }
 
-        // 2. Check internal filesDir models folder for previously imported default model
-        val fallbackLocalFile = File(context.filesDir, "models/active_model.tflite")
+        val fallbackLocalFile = File(context.filesDir, "models/custom_imported_model.tflite")
         if (fallbackLocalFile.exists() && fallbackLocalFile.length() > 64) {
             FileInputStream(fallbackLocalFile).use { fis ->
                 val channel = fis.channel
@@ -159,7 +148,6 @@ class TFLiteYoloDetector(
             }
         }
 
-        // 3. Check bundled APK assets
         if (profile.defaultAssetFile.isNotBlank()) {
             try {
                 val afd = context.assets.openFd(profile.defaultAssetFile)
@@ -173,7 +161,6 @@ class TFLiteYoloDetector(
                     return mapped to profile.defaultAssetFile.substringAfterLast('/')
                 }
             } catch (_: Exception) {
-                // Asset file not bundled yet
             }
         }
 
@@ -188,55 +175,47 @@ class TFLiteYoloDetector(
         countingZone: NormalizedRect?
     ): InferenceOutput {
         val currentInterpreter = interpreter
-        val state = engineState
-        if (currentInterpreter == null || state !is ModelEngineState.Ready) {
-            val msg = when (state) {
-                is ModelEngineState.MissingModelFile -> state.instructions
-                is ModelEngineState.Error -> state.message
-                else -> "AI model is not initialized."
-            }
-            return InferenceOutput(
-                detections = emptyList(),
-                lowConfidenceCandidateCount = 0,
-                inferenceTimeMs = 0L,
-                statusMessage = msg
+        if (currentInterpreter == null) {
+            return BuiltInSmallObjectDetector.detectObjects(
+                bitmap = bitmap,
+                confidenceThreshold = confidenceThreshold,
+                iouThreshold = iouThreshold,
+                countingZone = countingZone
             )
         }
 
         val startTime = SystemClock.elapsedRealtime()
         try {
-            // Prepare resized bitmap into reusable buffer
             val resized = if (bitmap.width == inputWidth && bitmap.height == inputHeight) {
                 bitmap
             } else {
-                Bitmap.createScaledBitmap(bitmap, inputWidth, inputHeight, true).also {
-                    scaledBitmap = it
-                }
+                Bitmap.createScaledBitmap(bitmap, inputWidth, inputHeight, true)
             }
 
-            val buffer = inputByteBuffer ?: return InferenceOutput(emptyList(), 0, 0L, "Buffer allocation error")
-            val pixels = intValues ?: return InferenceOutput(emptyList(), 0, 0L, "Pixel buffer error")
+            val buffer = inputByteBuffer ?: return BuiltInSmallObjectDetector.detectObjects(
+                bitmap, confidenceThreshold, iouThreshold, countingZone
+            )
+            val pixels = intValues ?: return BuiltInSmallObjectDetector.detectObjects(
+                bitmap, confidenceThreshold, iouThreshold, countingZone
+            )
             buffer.rewind()
 
             resized.getPixels(pixels, 0, inputWidth, 0, 0, inputWidth, inputHeight)
+            if (resized !== bitmap) {
+                resized.recycle()
+            }
 
             if (isInputQuantized) {
                 for (pixel in pixels) {
-                    val r = (pixel shr 16) and 0xFF
-                    val g = (pixel shr 8) and 0xFF
-                    val b = pixel and 0xFF
-                    buffer.put(r.toByte())
-                    buffer.put(g.toByte())
-                    buffer.put(b.toByte())
+                    buffer.put(((pixel shr 16) and 0xFF).toByte())
+                    buffer.put(((pixel shr 8) and 0xFF).toByte())
+                    buffer.put((pixel and 0xFF).toByte())
                 }
             } else {
                 for (pixel in pixels) {
-                    val r = ((pixel shr 16) and 0xFF) / 255.0f
-                    val g = ((pixel shr 8) and 0xFF) / 255.0f
-                    val b = (pixel and 0xFF) / 255.0f
-                    buffer.putFloat(r)
-                    buffer.putFloat(g)
-                    buffer.putFloat(b)
+                    buffer.putFloat(((pixel shr 16) and 0xFF) / 255.0f)
+                    buffer.putFloat(((pixel shr 8) and 0xFF) / 255.0f)
+                    buffer.putFloat((pixel and 0xFF) / 255.0f)
                 }
             }
 
@@ -246,8 +225,6 @@ class TFLiteYoloDetector(
             val lowConfFloor = (confidenceThreshold * 0.55f).coerceAtLeast(0.10f)
 
             if (outputCount >= 4) {
-                // Standard TFLite Task / SSD MobileNet style 4-tensor output:
-                // 0: locations [1, N, 4] (top, left, bottom, right), 1: classes [1, N], 2: scores [1, N], 3: count [1]
                 val numDetectionsShape = currentInterpreter.getOutputTensor(0).shape()
                 val maxDetections = if (numDetectionsShape.size >= 2) numDetectionsShape[1] else 25
                 val locations = Array(1) { Array(maxDetections) { FloatArray(4) } }
@@ -292,9 +269,8 @@ class TFLiteYoloDetector(
                     }
                 }
             } else {
-                // Single output tensor (YOLOv8 / YOLOv11 / YOLOv5)
                 val outTensor = currentInterpreter.getOutputTensor(0)
-                val shape = outTensor.shape() // e.g., [1, 84, 8400] or [1, 8400, 84] or [1, 25200, 6]
+                val shape = outTensor.shape()
                 val dim1 = if (shape.size >= 2) shape[1] else 0
                 val dim2 = if (shape.size >= 3) shape[2] else 0
 
@@ -304,7 +280,6 @@ class TFLiteYoloDetector(
                     val matrix = outputArray[0]
 
                     if (dim1 < dim2) {
-                        // YOLOv8/v11 format: [1, channels (4 + C), anchors (e.g. 8400)]
                         val numClasses = dim1 - 4
                         val numAnchors = dim2
                         for (anchor in 0 until numAnchors) {
@@ -327,7 +302,6 @@ class TFLiteYoloDetector(
                             var w = matrix[2][anchor]
                             var h = matrix[3][anchor]
 
-                            // Normalize if coordinates are in pixel space [0..inputWidth]
                             if (cx > 1.5f || cy > 1.5f || w > 1.5f || h > 1.5f) {
                                 cx /= inputWidth.toFloat()
                                 cy /= inputHeight.toFloat()
@@ -354,7 +328,6 @@ class TFLiteYoloDetector(
                             }
                         }
                     } else {
-                        // YOLOv5 or transposed YOLOv8 format: [1, anchors (e.g. 8400 or 25200), channels]
                         val numAnchors = dim1
                         val channels = dim2
                         for (anchor in 0 until numAnchors) {
@@ -363,11 +336,9 @@ class TFLiteYoloDetector(
                             val bestClassIndex: Int
 
                             if (channels == 6) {
-                                // NMS-baked or [cx, cy, w, h, conf, class]
                                 score = row[4]
                                 bestClassIndex = row[5].toInt().coerceAtLeast(0)
                             } else {
-                                // YOLOv5 [cx, cy, w, h, obj_conf, c0, c1, ...]
                                 val objConf = row[4]
                                 if (objConf < lowConfFloor) continue
                                 var maxCls = 0f
@@ -424,32 +395,22 @@ class TFLiteYoloDetector(
             val nmsFiltered = applyNonMaximumSuppression(rawCandidates, iouThreshold)
             val elapsed = SystemClock.elapsedRealtime() - startTime
 
-            val statusNote = if (nmsFiltered.isEmpty() && lowConfCount > 0) {
-                "Low-confidence objects seen ($lowConfCount below ${(confidenceThreshold * 100).toInt()}%). Improve lighting, move camera closer, or lower confidence sensitivity."
-            } else {
-                null
-            }
-
             return InferenceOutput(
                 detections = nmsFiltered,
                 lowConfidenceCandidateCount = lowConfCount,
                 inferenceTimeMs = elapsed,
-                statusMessage = statusNote
+                statusMessage = null
             )
         } catch (e: Exception) {
-            val elapsed = SystemClock.elapsedRealtime() - startTime
-            return InferenceOutput(
-                detections = emptyList(),
-                lowConfidenceCandidateCount = 0,
-                inferenceTimeMs = elapsed,
-                statusMessage = "Inference error: ${e.localizedMessage ?: e.javaClass.simpleName}"
+            return BuiltInSmallObjectDetector.detectObjects(
+                bitmap = bitmap,
+                confidenceThreshold = confidenceThreshold,
+                iouThreshold = iouThreshold,
+                countingZone = countingZone
             )
         }
     }
 
-    /**
-     * Class-agnostic Soft/Greedy Non-Maximum Suppression tuned for densely packed or slightly overlapping seeds/grains.
-     */
     private fun applyNonMaximumSuppression(
         candidates: List<DetectionResult>,
         iouThreshold: Float

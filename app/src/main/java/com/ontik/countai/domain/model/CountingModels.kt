@@ -3,6 +3,14 @@ package com.ontik.countai.domain.model
 import android.graphics.RectF
 
 /**
+ * Supported App Languages (English & Bangla) selectable in Settings.
+ */
+enum class AppLanguage(val code: String, val nativeName: String) {
+    BANGLA("bn", "বাংলা (Bangla)"),
+    ENGLISH("en", "English")
+}
+
+/**
  * Normalized bounding box and coordinates in [0.0f .. 1.0f] relative to the analyzed frame/image.
  */
 data class NormalizedRect(
@@ -24,7 +32,7 @@ data class NormalizedRect(
 }
 
 /**
- * Single AI object detection output from TensorFlow Lite / LiteRT model.
+ * Single object detection output from either Built-In Small Object Vision Engine or TFLite YOLO model.
  */
 data class DetectionResult(
     val boundingBox: NormalizedRect,
@@ -55,58 +63,108 @@ data class TrackedObject(
 )
 
 /**
- * Configurable direction for virtual line crossing.
+ * Configurable direction for virtual line crossing (Pure ASCII arrows to prevent encoding glitches).
  */
-enum class CountingDirection(val displayName: String, val description: String) {
-    TOP_TO_BOTTOM("Top → Bottom", "Count objects dropping downward across the horizontal line"),
-    BOTTOM_TO_TOP("Bottom → Top", "Count objects moving upward across the horizontal line"),
-    LEFT_TO_RIGHT("Left → Right", "Count objects moving left-to-right across the vertical line"),
-    RIGHT_TO_LEFT("Right → Left", "Count objects moving right-to-left across the vertical line"),
-    BIDIRECTIONAL("Bidirectional", "Count objects crossing the line in either direction once per ID");
+enum class CountingDirection(
+    val displayNameEn: String,
+    val displayNameBn: String,
+    val descriptionEn: String,
+    val descriptionBn: String
+) {
+    TOP_TO_BOTTOM(
+        displayNameEn = "Top -> Bottom",
+        displayNameBn = "উপর -> নিচ (Top -> Bottom)",
+        descriptionEn = "Count objects dropping downward across the horizontal line",
+        descriptionBn = "উপর থেকে নিচে দাগের ওপারে গেলে গণনা হবে"
+    ),
+    BOTTOM_TO_TOP(
+        displayNameEn = "Bottom -> Top",
+        displayNameBn = "নিচ -> উপর (Bottom -> Top)",
+        descriptionEn = "Count objects moving upward across the horizontal line",
+        descriptionBn = "নিচ থেকে উপরে দাগের ওপারে গেলে গণনা হবে"
+    ),
+    LEFT_TO_RIGHT(
+        displayNameEn = "Left -> Right",
+        displayNameBn = "বাম -> ডান (Left -> Right)",
+        descriptionEn = "Count objects moving left-to-right across the vertical line",
+        descriptionBn = "বাম থেকে ডানে দাগের ওপারে গেলে গণনা হবে"
+    ),
+    RIGHT_TO_LEFT(
+        displayNameEn = "Right -> Left",
+        displayNameBn = "ডান -> বাম (Right -> Left)",
+        descriptionEn = "Count objects moving right-to-left across the vertical line",
+        descriptionBn = "ডান থেকে বামে দাগের ওপারে গেলে গণনা হবে"
+    ),
+    BIDIRECTIONAL(
+        displayNameEn = "Both Ways (<->)",
+        displayNameBn = "উভয় দিকে (Both Ways <->)",
+        descriptionEn = "Count objects crossing the line in either direction once per ID",
+        descriptionBn = "যেদিক থেকেই দাগ পার হোক প্রতি বস্তু একবার গণনা হবে"
+    );
 
     val isHorizontalLine: Boolean
         get() = this == TOP_TO_BOTTOM || this == BOTTOM_TO_TOP || this == BIDIRECTIONAL
+
+    fun title(lang: AppLanguage): String =
+        if (lang == AppLanguage.BANGLA) displayNameBn else displayNameEn
+
+    fun subtitle(lang: AppLanguage): String =
+        if (lang == AppLanguage.BANGLA) descriptionBn else descriptionEn
 }
 
 /**
- * Configurable AI model architecture profile.
+ * Configurable AI & Computer Vision model architecture profile.
  */
 enum class ModelProfile(
     val id: String,
-    val title: String,
+    val titleEn: String,
+    val titleBn: String,
     val defaultAssetFile: String,
     val labelAssetFile: String,
     val inputResolution: Int,
-    val description: String
+    val descriptionEn: String,
+    val descriptionBn: String
 ) {
+    BUILTIN_SMALL_OBJECT_VISION(
+        id = "builtin_vision",
+        titleEn = "Built-In Smart Object & Grain Detector (Instant Offline)",
+        titleBn = "বিল্ট-ইন স্মার্ট অবজেক্ট ও দানা ডিটেক্টর (ফাইল ছাড়াই সরাসরি কাজ করে)",
+        defaultAssetFile = "",
+        labelAssetFile = "models/labels_small_objects.txt",
+        inputResolution = 320,
+        descriptionEn = "Works out-of-the-box with zero external files! Uses adaptive local contrast & connected-component segmentation to detect seeds, beans, nuts, coins, and objects on paper/table.",
+        descriptionBn = "কোনো আলাদা মডেল ফাইল ছাড়াই সাথে সাথে কাজ করে! সাদা কাগজ বা টেবিলের ওপর রাখা বাদাম, বীজ, শস্যদানা, কয়েন বা যেকোনো বস্তু শনাক্ত ও গণনা করে।"
+    ),
     DEDICATED_SMALL_OBJECT_YOLO(
         id = "small_object_yolo",
-        title = "Small-Object YOLOv8/v11 (Seeds, Grains, Beans)",
+        titleEn = "Small-Object YOLOv8/v11 TFLite (Seeds, Grains, Beans)",
+        titleBn = "Small-Object YOLOv8/v11 TFLite (বীজ ও শস্যদানার কাস্টম মডেল)",
         defaultAssetFile = "models/ontik_small_objects_yolov8n.tflite",
         labelAssetFile = "models/labels_small_objects.txt",
         inputResolution = 640,
-        description = "Dedicated model profile for small physical objects (seeds, grains, beans, lentils, pellets). Supports high-density NMS and small bounding boxes."
-    ),
-    GENERAL_YOLO_DETECTOR(
-        id = "general_yolo",
-        title = "General YOLOv8n / TFLite Object Detector",
-        defaultAssetFile = "models/yolov8n_general.tflite",
-        labelAssetFile = "models/labels_coco.txt",
-        inputResolution = 640,
-        description = "Standard pretrained object detection profile for larger everyday items."
+        descriptionEn = "Uses a dedicated YOLOv8/v11 .tflite model if imported, and automatically falls back to Built-In Vision Engine if no .tflite file is loaded.",
+        descriptionBn = "কাস্টম ট্রেইন করা .tflite মডেল ব্যবহার করে (মডেল ফাইল না থাকলে স্বয়ংক্রিয়ভাবে বিল্ট-ইন ইঞ্জিনে কাজ করবে)।"
     ),
     CUSTOM_EXTERNAL_TFLITE(
         id = "custom_tflite",
-        title = "Custom Imported TFLite Model (.tflite)",
+        titleEn = "Custom Imported TFLite Model (.tflite)",
+        titleBn = "ফোন থেকে ইমপোর্ট করা কাস্টম মডেল (.tflite)",
         defaultAssetFile = "",
         labelAssetFile = "models/labels_small_objects.txt",
         inputResolution = 640,
-        description = "User-imported custom .tflite model stored locally on device for 100% offline operation."
-    )
+        descriptionEn = "User-imported custom .tflite model stored locally on device for 100% offline operation.",
+        descriptionBn = "ফোনের মেমোরি থেকে সিলেক্ট করা কাস্টম .tflite মডেল (সম্পূর্ণ অফলাইনে চলে)।"
+    );
+
+    fun title(lang: AppLanguage): String =
+        if (lang == AppLanguage.BANGLA) titleBn else titleEn
+
+    fun subtitle(lang: AppLanguage): String =
+        if (lang == AppLanguage.BANGLA) descriptionBn else descriptionEn
 }
 
 /**
- * Status of the on-device AI inference engine.
+ * Status of the on-device AI / Vision inference engine.
  */
 sealed class ModelEngineState {
     data object Uninitialized : ModelEngineState()
@@ -118,9 +176,9 @@ sealed class ModelEngineState {
         val outputShapeDescription: String
     ) : ModelEngineState()
 
-    data class MissingModelFile(
-        val expectedPath: String,
-        val instructions: String
+    data class FallbackBuiltInReady(
+        val reasonEn: String,
+        val reasonBn: String
     ) : ModelEngineState()
 
     data class Error(val message: String) : ModelEngineState()

@@ -17,6 +17,7 @@ import com.ontik.countai.data.local.CountSessionEntity
 import com.ontik.countai.data.repository.AppSettings
 import com.ontik.countai.data.repository.CountRepository
 import com.ontik.countai.data.repository.SettingsRepository
+import com.ontik.countai.domain.model.AppLanguage
 import com.ontik.countai.domain.model.CountingDirection
 import com.ontik.countai.domain.model.DetectionResult
 import com.ontik.countai.domain.model.ManualPhotoPoint
@@ -44,7 +45,7 @@ enum class LiveCountingState {
 }
 
 data class LiveUiState(
-    val countingState: LiveCountingState = LiveCountingState.IDLE,
+    val countingState: LiveCountingState = LiveCountingState.RUNNING,
     val aiCrossedCount: Int = 0,
     val manualDelta: Int = 0,
     val currentlyDetectedInZone: Int = 0,
@@ -54,7 +55,7 @@ data class LiveUiState(
     val isAdjustingZone: Boolean = false,
     val statusBannerMessage: String? = null,
     val modelEngineState: ModelEngineState = ModelEngineState.Uninitialized,
-    val sessionStartElapsedMs: Long = 0L,
+    val sessionStartElapsedMs: Long = SystemClock.elapsedRealtime(),
     val lastCountPulseTimestamp: Long = 0L
 ) {
     val totalCount: Int
@@ -141,17 +142,11 @@ class CountViewModel(
         _liveState.update {
             it.copy(
                 modelEngineState = newDetector.engineState,
-                statusBannerMessage = when (val st = newDetector.engineState) {
-                    is ModelEngineState.MissingModelFile -> st.instructions
-                    is ModelEngineState.Error -> st.message
-                    is ModelEngineState.Ready -> "AI Model Ready: ${st.modelName} (${st.inputWidth}x${st.inputHeight})"
-                    ModelEngineState.Uninitialized -> "Initializing AI engine..."
-                }
+                statusBannerMessage = null
             )
         }
     }
 
-    // Live Counting Controls
     fun startLiveCounting() {
         _liveState.update { state ->
             val startMs = if (state.sessionStartElapsedMs == 0L) {
@@ -178,12 +173,12 @@ class CountViewModel(
         tracker.reset()
         _liveState.update {
             it.copy(
-                countingState = LiveCountingState.IDLE,
+                countingState = LiveCountingState.RUNNING,
                 aiCrossedCount = 0,
                 manualDelta = 0,
                 currentlyDetectedInZone = 0,
                 trackedObjects = emptyList(),
-                sessionStartElapsedMs = 0L
+                sessionStartElapsedMs = SystemClock.elapsedRealtime()
             )
         }
     }
@@ -199,27 +194,25 @@ class CountViewModel(
         _liveState.update { it.copy(torchEnabled = !it.torchEnabled) }
     }
 
-    fun setTorchEnabled(enabled: Boolean) {
-        _liveState.update { it.copy(torchEnabled = enabled) }
-    }
-
     fun toggleZoneAdjustmentMode() {
         _liveState.update { it.copy(isAdjustingZone = !it.isAdjustingZone) }
     }
 
-    fun saveCurrentLiveSession(notes: String = "") {
+    fun saveCurrentLiveSession(notes: String = ""): Int {
         val current = _liveState.value
         val cfg = settings.value
-        if (current.totalCount <= 0 && current.aiCrossedCount <= 0) return
+        val effectiveCount = if (current.totalCount > 0) current.totalCount else current.currentlyDetectedInZone
+        if (effectiveCount <= 0 && current.aiCrossedCount <= 0) return 0
 
         val durationSec = if (current.sessionStartElapsedMs > 0L) {
             ((SystemClock.elapsedRealtime() - current.sessionStartElapsedMs) / 1000L).coerceAtLeast(1L)
         } else {
-            0L
+            1L
         }
         val modelLabel = when (val st = current.modelEngineState) {
             is ModelEngineState.Ready -> st.modelName
-            else -> cfg.modelProfile.title
+            is ModelEngineState.FallbackBuiltInReady -> "Built-In Smart Vision"
+            else -> cfg.modelProfile.titleEn
         }
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -227,10 +220,10 @@ class CountViewModel(
                 CountSessionEntity(
                     timestampMs = System.currentTimeMillis(),
                     mode = "LIVE",
-                    finalCount = current.totalCount,
-                    aiDetectedCount = current.aiCrossedCount,
+                    finalCount = effectiveCount,
+                    aiDetectedCount = if (current.aiCrossedCount > 0) current.aiCrossedCount else current.currentlyDetectedInZone,
                     manualDelta = current.manualDelta,
-                    direction = cfg.countingDirection.displayName,
+                    direction = cfg.countingDirection.displayNameEn,
                     confidenceThreshold = cfg.confidenceThreshold,
                     durationSeconds = durationSec,
                     modelName = modelLabel,
@@ -238,11 +231,9 @@ class CountViewModel(
                 )
             )
         }
+        return effectiveCount
     }
 
-    /**
-     * Processes a real-time CameraX [ImageProxy] frame on a background analyzer thread.
-     */
     fun processCameraFrame(imageProxy: ImageProxy) {
         if (!isProcessingFrame.compareAndSet(false, true)) {
             imageProxy.close()
@@ -307,12 +298,6 @@ class CountViewModel(
                                 currentlyDetectedInZone = output.detections.size,
                                 trackedObjects = refreshedTracked,
                                 inferenceTimeMs = output.inferenceTimeMs,
-                                statusBannerMessage = output.statusMessage ?: when (val st = activeDetector.engineState) {
-                                    is ModelEngineState.MissingModelFile -> st.instructions
-                                    is ModelEngineState.Error -> st.message
-                                    is ModelEngineState.Ready -> null
-                                    ModelEngineState.Uninitialized -> null
-                                },
                                 lastCountPulseTimestamp = if (newlyCounted > 0) nowMs else prev.lastCountPulseTimestamp
                             )
                         }
@@ -326,16 +311,21 @@ class CountViewModel(
         }
     }
 
-    // Photo Counting Mode
     fun analyzePhotoFromUri(uri: Uri) {
         viewModelScope.launch(Dispatchers.Default) {
-            _photoState.update { it.copy(isAnalyzing = true, statusMessage = "Loading and analyzing photo...") }
+            val lang = settings.value.language
+            _photoState.update {
+                it.copy(
+                    isAnalyzing = true,
+                    statusMessage = if (lang == AppLanguage.BANGLA) "ছবি বিশ্লেষণ করা হচ্ছে..." else "Analyzing photo..."
+                )
+            }
             val bmp = ImageProxyUtils.loadUprightBitmapFromUri(getApplication(), uri, maxDimension = 1280)
             if (bmp == null) {
                 _photoState.update {
                     it.copy(
                         isAnalyzing = false,
-                        statusMessage = "Could not decode the selected image. Please try another photo."
+                        statusMessage = if (lang == AppLanguage.BANGLA) "ছবিটি লোড করা যায়নি।" else "Could not decode the selected image."
                     )
                 }
                 return@launch
@@ -356,12 +346,13 @@ class CountViewModel(
                 )
             }
             val cfg = settings.value
+            val lang = cfg.language
             val activeDetector = detector
             if (activeDetector == null) {
                 _photoState.update {
                     it.copy(
                         isAnalyzing = false,
-                        statusMessage = "AI detector is not initialized."
+                        statusMessage = "Detector not initialized."
                     )
                 }
                 return@launch
@@ -371,13 +362,13 @@ class CountViewModel(
                 bitmap = bitmap,
                 confidenceThreshold = cfg.confidenceThreshold,
                 iouThreshold = cfg.iouThreshold,
-                countingZone = null // Full photo analysis
+                countingZone = null
             )
 
-            val message = output.statusMessage ?: if (output.detections.isEmpty()) {
-                "0 objects confidently detected at ${(cfg.confidenceThreshold * 100).toInt()}% threshold. Tap anywhere on the photo to mark objects manually, or lower sensitivity in Settings."
+            val message = if (lang == AppLanguage.BANGLA) {
+                "মোট ${output.detections.size} টি বস্তু শনাক্ত হয়েছে (${output.inferenceTimeMs} ms)। কোনো বক্স বাদ দিতে বক্সে ট্যাপ করুন, বা নতুন যোগ করতে খালি জায়গায় ট্যাপ করুন।"
             } else {
-                "Detected ${output.detections.size} objects in ${output.inferenceTimeMs} ms. Tap a box to remove false positives, or tap empty space to add missed objects."
+                "Detected ${output.detections.size} objects in ${output.inferenceTimeMs} ms. Tap a box to remove it, or tap any missed item to add it."
             }
 
             _photoState.update {
@@ -391,18 +382,11 @@ class CountViewModel(
         }
     }
 
-    /**
-     * Interactive tap on the photo in Photo Counting mode:
-     * - If the tap hits an existing manual point, removes that manual point.
-     * - Else if the tap hits an active AI bounding box, toggles suppression of that AI detection.
-     * - Otherwise adds a new manual object marker at `(normalizedX, normalizedY)`.
-     */
     fun onPhotoTap(normalizedX: Float, normalizedY: Float) {
         val x = normalizedX.coerceIn(0f, 1f)
         val y = normalizedY.coerceIn(0f, 1f)
 
         _photoState.update { state ->
-            // 1. Check if user tapped an existing manual point
             val hitManual = state.manualAddedPoints.firstOrNull { pt ->
                 hypot((pt.normalizedX - x).toDouble(), (pt.normalizedY - y).toDouble()) <= 0.038
             }
@@ -412,7 +396,6 @@ class CountViewModel(
                 )
             }
 
-            // 2. Check if user tapped inside an AI detection bounding box
             val hitAiIndex = state.aiDetections.indexOfFirst { det ->
                 det.boundingBox.contains(x, y)
             }
@@ -426,7 +409,6 @@ class CountViewModel(
                 return@update state.copy(suppressedDetectionIndices = updatedSuppressed)
             }
 
-            // 3. Otherwise add a manual marker
             val newPoint = ManualPhotoPoint(
                 id = SystemClock.elapsedRealtimeNanos(),
                 normalizedX = x,
@@ -459,7 +441,7 @@ class CountViewModel(
 
         val modelLabel = when (val st = _liveState.value.modelEngineState) {
             is ModelEngineState.Ready -> st.modelName
-            else -> cfg.modelProfile.title
+            else -> "Built-In Smart Vision"
         }
 
         val netManual = photo.manualAddedPoints.size - photo.suppressedDetectionIndices.size + photo.manualDelta
@@ -482,7 +464,6 @@ class CountViewModel(
         }
     }
 
-    // History & Export Actions
     fun deleteSession(session: CountSessionEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             countRepository.deleteSession(session)
@@ -513,13 +494,20 @@ class CountViewModel(
         }
     }
 
-    // Settings Updates
+    fun updateLanguage(language: AppLanguage) {
+        viewModelScope.launch { settingsRepository.updateLanguage(language) }
+    }
+
     fun updateConfidenceThreshold(value: Float) {
         viewModelScope.launch { settingsRepository.updateConfidence(value) }
     }
 
     fun updateIouThreshold(value: Float) {
         viewModelScope.launch { settingsRepository.updateIouThreshold(value) }
+    }
+
+    fun resetSensitivityDefaults() {
+        viewModelScope.launch { settingsRepository.resetSensitivityDefaults() }
     }
 
     fun updateCountingDirection(direction: CountingDirection) {
@@ -538,20 +526,22 @@ class CountViewModel(
         viewModelScope.launch { settingsRepository.updateHapticFeedback(enabled) }
     }
 
-    fun updateCpuThreads(threads: Int) {
-        viewModelScope.launch { settingsRepository.updateCpuThreads(threads) }
-    }
-
     fun updateZoneAndLine(zone: NormalizedRect, linePos: Float) {
         viewModelScope.launch { settingsRepository.updateCountingZoneAndLine(zone, linePos) }
     }
 
     fun importCustomTfliteModel(uri: Uri, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
+            val lang = settings.value.language
             val result = settingsRepository.importCustomTfliteModel(uri)
             result.fold(
                 onSuccess = { path ->
-                    onResult(true, "Imported offline model: ${path.substringAfterLast('/')}")
+                    val msg = if (lang == AppLanguage.BANGLA) {
+                        "মডেল সফলভাবে যুক্ত হয়েছে: ${path.substringAfterLast('/')}"
+                    } else {
+                        "Imported offline model: ${path.substringAfterLast('/')}"
+                    }
+                    onResult(true, msg)
                 },
                 onFailure = { err ->
                     onResult(false, err.localizedMessage ?: "Failed to import model")

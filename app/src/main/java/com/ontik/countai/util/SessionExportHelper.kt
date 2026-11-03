@@ -9,6 +9,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Generates and shares CSV and TXT reports of counting history sessions for offline archiving or spreadsheet analysis.
+ */
 object SessionExportHelper {
 
     private val dateFormatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)

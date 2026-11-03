@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.ontik.countai.domain.model.AppLanguage
 import com.ontik.countai.domain.model.CountingDirection
 import com.ontik.countai.domain.model.ModelProfile
 import com.ontik.countai.domain.model.NormalizedRect
@@ -18,17 +19,18 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
-private val Context.dataStore by preferencesDataStore(name = "ontik_settings")
+private val Context.dataStore by preferencesDataStore(name = "ontik_settings_v2")
 
 data class AppSettings(
+    val language: AppLanguage = AppLanguage.BANGLA,
     val confidenceThreshold: Float = 0.35f,
     val iouThreshold: Float = 0.45f,
     val countingDirection: CountingDirection = CountingDirection.TOP_TO_BOTTOM,
-    val modelProfile: ModelProfile = ModelProfile.DEDICATED_SMALL_OBJECT_YOLO,
+    val modelProfile: ModelProfile = ModelProfile.BUILTIN_SMALL_OBJECT_VISION,
     val customModelPath: String? = null,
     val useBackCamera: Boolean = true,
     val hapticFeedbackEnabled: Boolean = true,
-    val countingZone: NormalizedRect = NormalizedRect(0.12f, 0.20f, 0.88f, 0.80f),
+    val countingZone: NormalizedRect = NormalizedRect(0.12f, 0.18f, 0.88f, 0.82f),
     val countingLinePosition: Float = 0.50f,
     val cpuThreads: Int = 4
 )
@@ -36,6 +38,7 @@ data class AppSettings(
 class SettingsRepository(private val context: Context) {
 
     private object Keys {
+        val LANGUAGE = stringPreferencesKey("app_language")
         val CONFIDENCE = floatPreferencesKey("confidence_threshold")
         val IOU = floatPreferencesKey("iou_threshold")
         val DIRECTION = stringPreferencesKey("counting_direction")
@@ -52,22 +55,26 @@ class SettingsRepository(private val context: Context) {
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
+        val langCode = prefs[Keys.LANGUAGE] ?: AppLanguage.BANGLA.code
+        val language = AppLanguage.entries.firstOrNull { it.code == langCode } ?: AppLanguage.BANGLA
+
         val dirName = prefs[Keys.DIRECTION] ?: CountingDirection.TOP_TO_BOTTOM.name
         val direction = CountingDirection.entries.firstOrNull { it.name == dirName }
             ?: CountingDirection.TOP_TO_BOTTOM
 
-        val profileId = prefs[Keys.MODEL_PROFILE] ?: ModelProfile.DEDICATED_SMALL_OBJECT_YOLO.id
+        val profileId = prefs[Keys.MODEL_PROFILE] ?: ModelProfile.BUILTIN_SMALL_OBJECT_VISION.id
         val profile = ModelProfile.entries.firstOrNull { it.id == profileId }
-            ?: ModelProfile.DEDICATED_SMALL_OBJECT_YOLO
+            ?: ModelProfile.BUILTIN_SMALL_OBJECT_VISION
 
         val left = (prefs[Keys.ZONE_LEFT] ?: 0.12f).coerceIn(0.02f, 0.80f)
-        val top = (prefs[Keys.ZONE_TOP] ?: 0.20f).coerceIn(0.02f, 0.80f)
+        val top = (prefs[Keys.ZONE_TOP] ?: 0.18f).coerceIn(0.02f, 0.80f)
         val right = (prefs[Keys.ZONE_RIGHT] ?: 0.88f).coerceIn(left + 0.15f, 0.98f)
-        val bottom = (prefs[Keys.ZONE_BOTTOM] ?: 0.80f).coerceIn(top + 0.15f, 0.98f)
+        val bottom = (prefs[Keys.ZONE_BOTTOM] ?: 0.82f).coerceIn(top + 0.15f, 0.98f)
 
         AppSettings(
-            confidenceThreshold = (prefs[Keys.CONFIDENCE] ?: 0.35f).coerceIn(0.10f, 0.95f),
-            iouThreshold = (prefs[Keys.IOU] ?: 0.45f).coerceIn(0.15f, 0.85f),
+            language = language,
+            confidenceThreshold = (prefs[Keys.CONFIDENCE] ?: 0.35f).coerceIn(0.10f, 0.90f),
+            iouThreshold = (prefs[Keys.IOU] ?: 0.45f).coerceIn(0.20f, 0.80f),
             countingDirection = direction,
             modelProfile = profile,
             customModelPath = prefs[Keys.CUSTOM_MODEL_PATH],
@@ -79,12 +86,23 @@ class SettingsRepository(private val context: Context) {
         )
     }
 
+    suspend fun updateLanguage(language: AppLanguage) {
+        context.dataStore.edit { it[Keys.LANGUAGE] = language.code }
+    }
+
     suspend fun updateConfidence(value: Float) {
-        context.dataStore.edit { it[Keys.CONFIDENCE] = value.coerceIn(0.10f, 0.95f) }
+        context.dataStore.edit { it[Keys.CONFIDENCE] = value.coerceIn(0.10f, 0.90f) }
     }
 
     suspend fun updateIouThreshold(value: Float) {
-        context.dataStore.edit { it[Keys.IOU] = value.coerceIn(0.15f, 0.85f) }
+        context.dataStore.edit { it[Keys.IOU] = value.coerceIn(0.20f, 0.80f) }
+    }
+
+    suspend fun resetSensitivityDefaults() {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.CONFIDENCE] = 0.35f
+            prefs[Keys.IOU] = 0.45f
+        }
     }
 
     suspend fun updateDirection(direction: CountingDirection) {
@@ -103,10 +121,6 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.HAPTIC] = enabled }
     }
 
-    suspend fun updateCpuThreads(threads: Int) {
-        context.dataStore.edit { it[Keys.CPU_THREADS] = threads.coerceIn(1, 8) }
-    }
-
     suspend fun updateCountingZoneAndLine(zone: NormalizedRect, linePos: Float) {
         context.dataStore.edit { prefs ->
             prefs[Keys.ZONE_LEFT] = zone.left.coerceIn(0.02f, 0.80f)
@@ -117,10 +131,6 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    /**
-     * Copies a user-selected `.tflite` file from storage URI into the app's private offline storage
-     * (`filesDir/models/custom_imported_model.tflite`) and activates it immediately.
-     */
     suspend fun importCustomTfliteModel(uri: Uri): Result<String> = withContext(Dispatchers.IO) {
         try {
             val modelsDir = File(context.filesDir, "models").apply { mkdirs() }

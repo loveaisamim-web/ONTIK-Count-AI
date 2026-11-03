@@ -1,6 +1,7 @@
 package com.ontik.countai.ui.screens
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,8 +18,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -53,10 +54,13 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ontik.countai.ui.theme.AppStrings
 import com.ontik.countai.ui.theme.CardBorderGray
 import com.ontik.countai.ui.theme.OntikGreenAccent
 import com.ontik.countai.ui.theme.OntikGreenDark
@@ -75,7 +79,10 @@ fun PhotoCountingScreen(
     onBack: () -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
+    val context = LocalContext.current
     val photoState by viewModel.photoState.collectAsState()
+    val settings by viewModel.settings.collectAsState()
+    val lang = settings.language
 
     val galleryPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -98,8 +105,9 @@ fun PhotoCountingScreen(
             .fillMaxSize()
             .background(WhiteBackground)
             .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // Header
         Row(
@@ -107,20 +115,26 @@ fun PhotoCountingScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
                 IconButton(onClick = onBack) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
                 Column {
                     Text(
-                        text = "Photo Counting",
-                        style = MaterialTheme.typography.headlineMedium,
+                        text = AppStrings.photoScreenTitle(lang),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
                         color = TextPrimaryDark
                     )
                     Text(
-                        text = "Detect, inspect & manually refine counts on still photos",
+                        text = AppStrings.photoScreenSubtitle(lang),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondarySlate
+                        color = TextSecondarySlate,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -134,7 +148,7 @@ fun PhotoCountingScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(containerColor = SoftGraySurface),
             border = BorderStroke(1.dp, CardBorderGray)
         ) {
@@ -210,13 +224,14 @@ fun PhotoCountingScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "Select or Capture a Photo",
+                            text = AppStrings.photoEmptyTitle(lang),
                             style = MaterialTheme.typography.titleLarge,
-                            color = TextPrimaryDark
+                            color = TextPrimaryDark,
+                            textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Spread seeds, grains, beans, or components on a contrasting surface and capture or pick a photo. You can tap any missed object to add it or tap a box to remove false detections.",
+                            text = AppStrings.photoEmptyDesc(lang),
                             style = MaterialTheme.typography.bodyMedium,
                             textAlign = TextAlign.Center
                         )
@@ -249,13 +264,13 @@ fun PhotoCountingScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "PHOTO TOTAL COUNT",
+                        text = AppStrings.photoTotalLabel(lang),
                         style = MaterialTheme.typography.labelLarge,
                         color = OntikGreenDark
                     )
@@ -265,7 +280,7 @@ fun PhotoCountingScreen(
                         color = TextPrimaryDark
                     )
                     Text(
-                        text = "AI Boxes: ${photoState.activeAiCount} | Tap Marks: +${photoState.manualAddedPoints.size}",
+                        text = AppStrings.photoBreakdown(lang, photoState.activeAiCount, photoState.manualAddedPoints.size),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -302,7 +317,14 @@ fun PhotoCountingScreen(
                         Icon(Icons.Default.Refresh, contentDescription = "Reset Edits")
                     }
                     FilledIconButton(
-                        onClick = { viewModel.savePhotoSession() },
+                        onClick = {
+                            viewModel.savePhotoSession()
+                            Toast.makeText(
+                                context,
+                                AppStrings.sessionSavedToast(lang, photoState.totalCount),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
                         shape = CircleShape,
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = OntikGreenPrimary,
@@ -317,20 +339,28 @@ fun PhotoCountingScreen(
 
         // Bottom Action Buttons
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Button(
                 onClick = { takePicturePreviewLauncher.launch(null) },
                 modifier = Modifier
                     .weight(1f)
-                    .height(50.dp),
-                shape = RoundedCornerShape(14.dp),
+                    .height(48.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
             ) {
                 Icon(OntikIcons.Camera, contentDescription = null, tint = Color.White)
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Capture Photo", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(
+                    text = AppStrings.capturePhotoBtn(lang),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
             OutlinedButton(
@@ -341,13 +371,20 @@ fun PhotoCountingScreen(
                 },
                 modifier = Modifier
                     .weight(1f)
-                    .height(50.dp),
-                shape = RoundedCornerShape(14.dp),
+                    .height(48.dp),
+                shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, OntikGreenPrimary)
             ) {
                 Icon(OntikIcons.PhotoLibrary, contentDescription = null, tint = OntikGreenPrimary)
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Pick from Gallery", color = OntikGreenPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(
+                    text = AppStrings.pickGalleryBtn(lang),
+                    color = OntikGreenPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

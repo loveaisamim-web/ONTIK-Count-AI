@@ -3,9 +3,9 @@ package com.ontik.countai.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import android.view.HapticFeedbackConstants
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -58,11 +59,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.ontik.countai.domain.model.ModelEngineState
+import com.ontik.countai.domain.model.AppLanguage
 import com.ontik.countai.ui.components.CameraPreviewWithZoneOverlay
+import com.ontik.countai.ui.theme.AppStrings
 import com.ontik.countai.ui.theme.CardBorderGray
 import com.ontik.countai.ui.theme.OntikGreenDark
 import com.ontik.countai.ui.theme.OntikGreenLight
@@ -88,6 +91,7 @@ fun LiveCountingScreen(
     val view = LocalView.current
     val liveState by viewModel.liveState.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val lang = settings.language
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -127,35 +131,60 @@ fun LiveCountingScreen(
             .fillMaxSize()
             .background(WhiteBackground)
             .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Top Header Bar
+        // Top Header Bar with Quick Language Toggle, Photo, History & Settings
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
                         text = "ONTIK Count AI",
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold,
                         color = TextPrimaryDark
                     )
-                    StatusBadge(countingState = liveState.countingState)
+                    StatusBadge(countingState = liveState.countingState, lang = lang)
                 }
                 Text(
-                    text = "${settings.countingDirection.displayName} • Conf ${(settings.confidenceThreshold * 100).toInt()}%",
+                    text = "${settings.countingDirection.title(lang)} • Sens ${(settings.confidenceThreshold * 100).toInt()}%",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondarySlate
+                    color = TextSecondarySlate,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        val nextLang = if (lang == AppLanguage.BANGLA) AppLanguage.ENGLISH else AppLanguage.BANGLA
+                        viewModel.updateLanguage(nextLang)
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.height(32.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, OntikGreenPrimary)
+                ) {
+                    Text(
+                        text = if (lang == AppLanguage.BANGLA) "EN" else "বাং",
+                        color = OntikGreenPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
                 IconButton(onClick = onNavigateToPhoto) {
                     Icon(
                         imageVector = OntikIcons.Camera,
@@ -180,52 +209,12 @@ fun LiveCountingScreen(
             }
         }
 
-        // Status Banner
-        AnimatedVisibility(visible = liveState.statusBannerMessage != null) {
-            val isMissingModel = liveState.modelEngineState is ModelEngineState.MissingModelFile
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isMissingModel) WarningAmberBg else OntikGreenLight
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    if (isMissingModel) WarningAmber.copy(alpha = 0.4f) else OntikGreenPrimary.copy(alpha = 0.3f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = liveState.statusBannerMessage ?: "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isMissingModel) WarningAmber else OntikGreenDark,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (isMissingModel) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        OutlinedButton(
-                            onClick = onNavigateToSettings,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text("Import Model", fontSize = 12.sp)
-                        }
-                    }
-                }
-            }
-        }
-
         // Camera Preview with Zone Overlay
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(18.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             border = BorderStroke(1.dp, CardBorderGray)
         ) {
@@ -253,13 +242,13 @@ fun LiveCountingScreen(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = "Camera Permission Required",
+                            text = AppStrings.cameraPermissionTitle(lang),
                             style = MaterialTheme.typography.titleLarge,
                             color = TextPrimaryDark
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "ONTIK Count AI needs camera access to detect and track physical objects passing through the counting zone in real time.",
+                            text = AppStrings.cameraPermissionDesc(lang),
                             style = MaterialTheme.typography.bodyMedium,
                             textAlign = TextAlign.Center
                         )
@@ -268,7 +257,7 @@ fun LiveCountingScreen(
                             onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
                             colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
                         ) {
-                            Text("Grant Camera Permission")
+                            Text(AppStrings.grantPermissionBtn(lang))
                         }
                     }
                 }
@@ -277,7 +266,7 @@ fun LiveCountingScreen(
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(12.dp),
+                        .padding(10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     FilledIconButton(
@@ -311,15 +300,15 @@ fun LiveCountingScreen(
                 Surface(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(12.dp),
-                    color = Color.Black.copy(alpha = 0.60f),
+                        .padding(10.dp),
+                    color = Color.Black.copy(alpha = 0.65f),
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Text(
                         text = if (liveState.isAdjustingZone) {
-                            "Drag zone corners or dashed line to adjust"
+                            AppStrings.dragZoneHint(lang)
                         } else {
-                            "In Zone: ${liveState.currentlyDetectedInZone} • ${liveState.inferenceTimeMs} ms"
+                            AppStrings.liveTelemetry(lang, liveState.currentlyDetectedInZone, liveState.inferenceTimeMs)
                         },
                         color = Color.White,
                         fontSize = 12.sp,
@@ -333,20 +322,20 @@ fun LiveCountingScreen(
         // Total Count Card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(containerColor = SoftGraySurface),
             border = BorderStroke(1.dp, CardBorderGray)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "TOTAL COUNT",
+                        text = AppStrings.totalCountLabel(lang),
                         style = MaterialTheme.typography.labelLarge,
                         color = OntikGreenDark
                     )
@@ -357,7 +346,7 @@ fun LiveCountingScreen(
                         modifier = Modifier.scale(countScale)
                     )
                     Text(
-                        text = "In Zone: ${liveState.currentlyDetectedInZone} | Adj: ${if (liveState.manualDelta >= 0) "+${liveState.manualDelta}" else "${liveState.manualDelta}"}",
+                        text = AppStrings.inZoneSummary(lang, liveState.currentlyDetectedInZone, liveState.manualDelta),
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondarySlate
                     )
@@ -392,7 +381,16 @@ fun LiveCountingScreen(
                     }
 
                     FilledIconButton(
-                        onClick = { viewModel.saveCurrentLiveSession() },
+                        onClick = {
+                            val savedTotal = viewModel.saveCurrentLiveSession()
+                            if (savedTotal > 0) {
+                                Toast.makeText(
+                                    context,
+                                    AppStrings.sessionSavedToast(lang, savedTotal),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
                         shape = CircleShape,
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = OntikGreenPrimary,
@@ -406,10 +404,12 @@ fun LiveCountingScreen(
             }
         }
 
-        // Primary Action Controls
+        // Clean Single-Line Primary Action Controls (Protected from System Navigation Bar overlap)
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             when (liveState.countingState) {
@@ -417,42 +417,63 @@ fun LiveCountingScreen(
                     Button(
                         onClick = viewModel::startLiveCounting,
                         modifier = Modifier
-                            .weight(1.4f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
+                            .weight(1.25f)
+                            .height(48.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Start Counting", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = AppStrings.startCounting(lang),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
                 LiveCountingState.RUNNING -> {
                     Button(
                         onClick = viewModel::pauseLiveCounting,
                         modifier = Modifier
-                            .weight(1.4f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
+                            .weight(1.25f)
+                            .height(48.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = OntikGreenDark)
                     ) {
-                        Icon(OntikIcons.Pause, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Pause", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Icon(OntikIcons.Pause, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = AppStrings.pauseCounting(lang),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
                 LiveCountingState.PAUSED -> {
                     Button(
                         onClick = viewModel::resumeLiveCounting,
                         modifier = Modifier
-                            .weight(1.4f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
+                            .weight(1.25f)
+                            .height(48.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Resume", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = AppStrings.resumeCounting(lang),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
@@ -460,38 +481,54 @@ fun LiveCountingScreen(
             OutlinedButton(
                 onClick = viewModel::resetLiveCounting,
                 modifier = Modifier
-                    .weight(0.9f)
-                    .height(52.dp),
-                shape = RoundedCornerShape(14.dp),
+                    .weight(1f)
+                    .height(48.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, CardBorderGray)
             ) {
-                Icon(Icons.Default.Refresh, contentDescription = null, tint = TextPrimaryDark)
+                Icon(Icons.Default.Refresh, contentDescription = null, tint = TextPrimaryDark, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Reset", color = TextPrimaryDark, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = AppStrings.resetCounting(lang),
+                    color = TextPrimaryDark,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
             OutlinedButton(
                 onClick = onNavigateToPhoto,
                 modifier = Modifier
-                    .weight(0.9f)
-                    .height(52.dp),
-                shape = RoundedCornerShape(14.dp),
+                    .weight(1f)
+                    .height(48.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, OntikGreenPrimary)
             ) {
-                Icon(OntikIcons.Camera, contentDescription = null, tint = OntikGreenPrimary)
+                Icon(OntikIcons.Camera, contentDescription = null, tint = OntikGreenPrimary, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Photo", color = OntikGreenPrimary, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = AppStrings.photoModeBtn(lang),
+                    color = OntikGreenPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
 }
 
 @Composable
-private fun StatusBadge(countingState: LiveCountingState) {
+private fun StatusBadge(countingState: LiveCountingState, lang: AppLanguage) {
     val (bg, fg, label) = when (countingState) {
-        LiveCountingState.IDLE -> Triple(SoftGraySurface, TextSecondarySlate, "READY")
-        LiveCountingState.RUNNING -> Triple(OntikGreenLight, OntikGreenDark, "LIVE")
-        LiveCountingState.PAUSED -> Triple(WarningAmberBg, WarningAmber, "PAUSED")
+        LiveCountingState.IDLE -> Triple(SoftGraySurface, TextSecondarySlate, AppStrings.statusReady(lang))
+        LiveCountingState.RUNNING -> Triple(OntikGreenLight, OntikGreenDark, AppStrings.statusLive(lang))
+        LiveCountingState.PAUSED -> Triple(WarningAmberBg, WarningAmber, AppStrings.statusPaused(lang))
     }
     Box(
         modifier = Modifier
