@@ -12,7 +12,6 @@
         android:name="android.hardware.camera.flash"
         android:required="false" />
 
-    <!-- Strictly minimal Play Store permissions: CAMERA, VIBRATE, INTERNET, ACCESS_NETWORK_STATE -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -31,7 +30,11 @@
         android:theme="@style/Theme.OntikCountAI"
         tools:targetApi="34">
 
-        <!-- AdMob Sample App ID (Replace in gradle.properties/Manifest for production AdMob) -->
+        <property
+            android:name="android.adservices.AD_SERVICES_CONFIG"
+            android:resource="@xml/gma_ad_services_config"
+            tools:replace="android:resource" />
+
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-3940256099942544~3347511713" />
@@ -47,7 +50,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Disable default WorkManager initializer so HiltWorkerFactory can initialize it -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
