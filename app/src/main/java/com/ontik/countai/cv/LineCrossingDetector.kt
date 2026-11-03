@@ -1,7 +1,6 @@
 package com.ontik.countai.cv
 
 import com.ontik.countai.domain.model.CountingDirection
-import kotlin.math.abs
 
 /**
  * High-speed segment-intersection line-crossing evaluator.
@@ -32,8 +31,8 @@ object LineCrossingDetector {
         val h = hysteresis.coerceIn(0.002f, 0.05f)
 
         return if (direction.isHorizontalLine) {
-            val crossedDown = prevY < linePos && currY >= (linePos + h * 0.25f) && (currY - prevY) > h * 0.3f
-            val crossedUp = prevY > linePos && currY <= (linePos - h * 0.25f) && (prevY - currY) > h * 0.3f
+            val crossedDown = prevY < linePos && currY >= linePos && (currY - prevY) > h * 0.2f
+            val crossedUp = prevY > linePos && currY <= linePos && (prevY - currY) > h * 0.2f
 
             when (direction) {
                 CountingDirection.TOP_TO_BOTTOM -> if (crossedDown) +1 else 0
@@ -46,8 +45,8 @@ object LineCrossingDetector {
                 else -> 0
             }
         } else {
-            val crossedRight = prevX < linePos && currX >= (linePos + h * 0.25f) && (currX - prevX) > h * 0.3f
-            val crossedLeft = prevX > linePos && currX <= (linePos - h * 0.25f) && (prevX - currX) > h * 0.3f
+            val crossedRight = prevX < linePos && currX >= linePos && (currX - prevX) > h * 0.2f
+            val crossedLeft = prevX > linePos && currX <= linePos && (prevX - currX) > h * 0.2f
 
             when (direction) {
                 CountingDirection.LEFT_TO_RIGHT -> if (crossedRight) +1 else 0
@@ -79,7 +78,7 @@ object LineCrossingDetector {
             CountingDirection.BOTTOM_TO_TOP -> startY < (linePos - margin)
             CountingDirection.LEFT_TO_RIGHT -> startX > (linePos + margin)
             CountingDirection.RIGHT_TO_LEFT -> startX < (linePos - margin)
-            CountingDirection.BIDIRECTIONAL -> abs(( if (direction.isHorizontalLine) startY else startX ) - linePos) < margin * 0.25f
+            CountingDirection.BIDIRECTIONAL -> kotlin.math.abs(( if (direction.isHorizontalLine) startY else startX ) - linePos) < margin * 0.25f
         }
     }
 }

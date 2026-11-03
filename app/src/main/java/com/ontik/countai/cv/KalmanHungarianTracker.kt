@@ -13,8 +13,10 @@ import kotlin.math.max
  *
  * Features:
  * - 4-state Constant-Velocity Kalman filter `[x, y, vx, vy]` per track using real frame `dtSeconds`.
- * - Optimal Hungarian assignment (`HungarianAlgorithm`) with speed-scaled gating distance
- *   (automatically widened when a frame drop `dt > 2 * expectedDt` is detected).
+ * - Optimal Hungarian assignment (`HungarianAlgorithm`) with speed-scaled and tentative-scaled gating distance
+ *   (automatically widened when a frame drop `dt > 2 * expectedDt` is detected or on the first jump).
+ * - Segment-intersection line crossing evaluated directly on physical centroid displacement
+ *   `(prevMeasuredX, prevMeasuredY) -> (currMeasuredX, currMeasuredY)`, preventing Kalman filter dampening lag.
  * - Track states:
  *   - `TENTATIVE` (needs 2 consecutive hits to confirm; if it crosses the line while tentative,
  *     records `tentativeCrossedLineA = true` and counts retroactively upon confirmation within 3 frames).
@@ -32,6 +34,10 @@ class KalmanHungarianTracker {
         var y: Float,
         var prevX: Float,
         var prevY: Float,
+        var prevMeasuredX: Float = x,
+        var prevMeasuredY: Float = y,
+        var currMeasuredX: Float = x,
+        var currMeasuredY: Float = y,
         var vx: Float = 0f,
         var vy: Float = 0f,
         var posVar: Float = 0.01f,
@@ -75,6 +81,11 @@ class KalmanHungarianTracker {
         }
 
         fun update(blob: GrainBlob, dtSeconds: Float, timestampMs: Long) {
+            prevMeasuredX = currMeasuredX
+            prevMeasuredY = currMeasuredY
+            currMeasuredX = blob.centerX
+            currMeasuredY = blob.centerY
+
             val dt = dtSeconds.coerceIn(0.004f, 0.25f)
             val measNoise = 0.005f
             val kalmanGainPos = posVar / (posVar + measNoise)
@@ -188,8 +199,9 @@ class KalmanHungarianTracker {
             val tr = tracks[tIdx]
             val speedNormPerSec = hypot(tr.vx.toDouble(), tr.vy.toDouble()).toFloat()
             val speedBonus = (speedNormPerSec * dtSeconds * 0.85f).coerceAtMost(0.22f)
+            val tentativeMultiplier = if (tr.consecutiveHits == 1) 1.65f else 1.0f
             val dropMultiplier = if (frameDropDetected) 1.65f else 1.0f
-            gatingArray[tIdx] = ((baseGatingDistance + speedBonus) * dropMultiplier).coerceIn(0.05f, 0.45f)
+            gatingArray[tIdx] = ((baseGatingDistance * tentativeMultiplier + speedBonus) * dropMultiplier).coerceIn(0.05f, 0.45f)
 
             for (bIdx in 0 until numBlobs) {
                 val b = blobs[bIdx]
@@ -214,13 +226,13 @@ class KalmanHungarianTracker {
                 val blob = blobs[matchedBIdx]
                 track.update(blob, dtSeconds, timestampMs)
 
-                // Evaluate Line A crossing on segment (prevX, prevY) -> (x, y)
+                // Evaluate Line A crossing on physical centroid displacement
                 if (isCountingActive) {
                     val crossSignA = LineCrossingDetector.evaluateSegmentCrossing(
-                        prevX = track.prevX,
-                        prevY = track.prevY,
-                        currX = track.x,
-                        currY = track.y,
+                        prevX = track.prevMeasuredX,
+                        prevY = track.prevMeasuredY,
+                        currX = track.currMeasuredX,
+                        currY = track.currMeasuredY,
                         linePos = lineAPos,
                         hysteresis = hysteresis,
                         direction = direction
@@ -258,10 +270,10 @@ class KalmanHungarianTracker {
                     // Optional Verification Line B
                     if (lineBPos != null && !track.countedLineB) {
                         val crossSignB = LineCrossingDetector.evaluateSegmentCrossing(
-                            prevX = track.prevX,
-                            prevY = track.prevY,
-                            currX = track.x,
-                            currY = track.y,
+                            prevX = track.prevMeasuredX,
+                            prevY = track.prevMeasuredY,
+                            currX = track.currMeasuredX,
+                            currY = track.currMeasuredY,
                             linePos = lineBPos,
                             hysteresis = hysteresis,
                             direction = direction
@@ -319,6 +331,10 @@ class KalmanHungarianTracker {
                     y = blob.centerY,
                     prevX = blob.centerX,
                     prevY = blob.centerY,
+                    prevMeasuredX = blob.centerX,
+                    prevMeasuredY = blob.centerY,
+                    currMeasuredX = blob.centerX,
+                    currMeasuredY = blob.centerY,
                     boundingBox = blob.boundingBox,
                     estimatedGrainCount = blob.estimatedGrainCount,
                     isClump = blob.isClump,
