@@ -17,6 +17,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
             useSupportLibrary = true
         }
     }
