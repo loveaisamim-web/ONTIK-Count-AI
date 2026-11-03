@@ -9,13 +9,16 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Generates and shares CSV and TXT reports of counting history sessions for offline archiving or spreadsheet analysis.
- */
 object SessionExportHelper {
 
     private val dateFormatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
     private val fileStampFormatter = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+
+    private fun csvCell(value: String): String {
+        val quote = "\""
+        val doubleQuote = "\"\""
+        return quote + value.replace(quote, doubleQuote) + quote
+    }
 
     fun exportToCsv(context: Context, sessions: List<CountSessionEntity>): File {
         val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
@@ -26,11 +29,20 @@ object SessionExportHelper {
 
         for (session in sessions) {
             val formattedDate = dateFormatter.format(Date(session.timestampMs))
-            val safeNotes = session.notes.replace(""", """")
-            val safeModel = session.modelName.replace(""", """")
-            sb.appendLine(
-                "${session.id},"$formattedDate","${session.mode}",${session.finalCount},${session.aiDetectedCount},${session.manualDelta},"${session.direction}",${session.confidenceThreshold},${session.durationSeconds},"$safeModel","$safeNotes""
-            )
+            val row = listOf(
+                session.id.toString(),
+                csvCell(formattedDate),
+                csvCell(session.mode),
+                session.finalCount.toString(),
+                session.aiDetectedCount.toString(),
+                session.manualDelta.toString(),
+                csvCell(session.direction),
+                session.confidenceThreshold.toString(),
+                session.durationSeconds.toString(),
+                csvCell(session.modelName),
+                csvCell(session.notes)
+            ).joinToString(",")
+            sb.appendLine(row)
         }
 
         file.writeText(sb.toString(), Charsets.UTF_8)
@@ -52,12 +64,13 @@ object SessionExportHelper {
         sb.appendLine()
 
         sessions.forEachIndexed { index, s ->
+            val manualStr = if (s.manualDelta >= 0) "+${s.manualDelta}" else s.manualDelta.toString()
             sb.appendLine("Session #${index + 1} (ID: ${s.id})")
             sb.appendLine("  Date & Time       : ${dateFormatter.format(Date(s.timestampMs))}")
             sb.appendLine("  Counting Mode     : ${s.mode}")
             sb.appendLine("  Total Final Count : ${s.finalCount}")
             sb.appendLine("  AI Raw Count      : ${s.aiDetectedCount}")
-            sb.appendLine("  Manual Adjustment : ${if (s.manualDelta >= 0) "+${s.manualDelta}" else "${s.manualDelta}"}")
+            sb.appendLine("  Manual Adjustment : $manualStr")
             sb.appendLine("  Direction         : ${s.direction}")
             sb.appendLine("  Confidence Config : ${(s.confidenceThreshold * 100).toInt()}%")
             sb.appendLine("  Duration          : ${s.durationSeconds}s")
