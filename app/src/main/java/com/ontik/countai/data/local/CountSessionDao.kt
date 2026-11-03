@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -15,6 +16,9 @@ interface CountSessionDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSession(session: CountSessionEntity): Long
+
+    @Update
+    suspend fun updateSession(session: CountSessionEntity)
 
     @Delete
     suspend fun deleteSession(session: CountSessionEntity)

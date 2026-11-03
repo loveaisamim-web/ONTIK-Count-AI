@@ -1,4 +1,4 @@
-name: ONTIK Count AI - Android CI Build
+name: ONTIK Count AI - OpenCV Android CI Build
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-debug-apk:
-    name: Build Debug APK (JDK 17 / Gradle 8.7)
+    name: Test & Build Debug APK (JDK 17 / Gradle 8.7 / OpenCV 4.9.0)
     runs-on: ubuntu-latest
 
     steps:
@@ -27,6 +27,10 @@ jobs:
         with:
           gradle-version: '8.7'
           cache-read-only: false
+
+      - name: Run Unit Tests (Tracker, Hungarian, Line Crossing, Area Split)
+        run: |
+          gradle testDebugUnitTest --stacktrace --no-daemon
 
       - name: Build Debug APK with Stacktrace
         run: |

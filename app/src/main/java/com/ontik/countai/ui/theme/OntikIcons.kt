@@ -18,12 +18,37 @@ object OntikIcons {
     ).apply {
         path(
             fill = null,
-            stroke = SolidColor(Color.Black),
+            stroke = SolidColor(Color.White),
             strokeLineWidth = 2.5f,
             strokeLineCap = StrokeCap.Round
         ) {
             moveTo(5f, 12f)
             lineTo(19f, 12f)
+        }
+    }.build()
+
+    val Undo: ImageVector = ImageVector.Builder(
+        name = "Undo",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = null,
+            stroke = SolidColor(Color.White),
+            strokeLineWidth = 2.2f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round
+        ) {
+            moveTo(9f, 14f)
+            lineTo(4f, 9f)
+            lineTo(9f, 4f)
+            moveTo(4f, 9f)
+            horizontalLineTo(15f)
+            arcTo(5f, 5f, 0f, isMoreThanHalf = false, isPositiveArc = true, 20f, 14f)
+            arcTo(5f, 5f, 0f, isMoreThanHalf = false, isPositiveArc = true, 15f, 19f)
+            horizontalLineTo(11f)
         }
     }.build()
 
@@ -39,43 +64,12 @@ object OntikIcons {
             horizontalLineTo(10f)
             verticalLineTo(5f)
             horizontalLineTo(6f)
-            verticalLineTo(19f)
             close()
             moveTo(14f, 5f)
             verticalLineTo(19f)
             horizontalLineTo(18f)
             verticalLineTo(5f)
-            horizontalLineTo(14f)
             close()
-        }
-    }.build()
-
-    val Crop: ImageVector = ImageVector.Builder(
-        name = "Crop",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).apply {
-        path(
-            fill = null,
-            stroke = SolidColor(Color.White),
-            strokeLineWidth = 2f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round
-        ) {
-            moveTo(4f, 9f)
-            verticalLineTo(5f)
-            horizontalLineTo(8f)
-            moveTo(16f, 5f)
-            horizontalLineTo(20f)
-            verticalLineTo(9f)
-            moveTo(20f, 15f)
-            verticalLineTo(19f)
-            horizontalLineTo(16f)
-            moveTo(8f, 19f)
-            horizontalLineTo(4f)
-            verticalLineTo(15f)
         }
     }.build()
 
@@ -94,7 +88,6 @@ object OntikIcons {
             lineTo(17f, 10f)
             horizontalLineTo(13f)
             lineTo(17f, 2f)
-            horizontalLineTo(7f)
             close()
         }
     }.build()
@@ -118,44 +111,9 @@ object OntikIcons {
             lineTo(10f, 10f)
             lineTo(7f, 2f)
             horizontalLineTo(15f)
-            lineTo(12.5f, 7f)
             moveTo(10f, 13f)
             verticalLineTo(22f)
             lineTo(14f, 16.5f)
-        }
-    }.build()
-
-    val Camera: ImageVector = ImageVector.Builder(
-        name = "Camera",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).apply {
-        path(
-            fill = null,
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = 2f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round
-        ) {
-            moveTo(23f, 19f)
-            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = true, 21f, 21f)
-            horizontalLineTo(3f)
-            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = true, 1f, 19f)
-            verticalLineTo(8f)
-            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = true, 3f, 6f)
-            horizontalLineTo(7f)
-            lineTo(9f, 3f)
-            horizontalLineTo(15f)
-            lineTo(17f, 6f)
-            horizontalLineTo(21f)
-            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = true, 23f, 8f)
-            close()
-            moveTo(12f, 17f)
-            arcTo(4f, 4f, 0f, isMoreThanHalf = true, isPositiveArc = false, 12f, 9f)
-            arcTo(4f, 4f, 0f, isMoreThanHalf = false, isPositiveArc = false, 12f, 17f)
-            close()
         }
     }.build()
 
@@ -168,7 +126,7 @@ object OntikIcons {
     ).apply {
         path(
             fill = null,
-            stroke = SolidColor(Color.Black),
+            stroke = SolidColor(Color.White),
             strokeLineWidth = 2f,
             strokeLineCap = StrokeCap.Round,
             strokeLineJoin = StrokeJoin.Round
@@ -184,37 +142,8 @@ object OntikIcons {
         }
     }.build()
 
-    val PhotoLibrary: ImageVector = ImageVector.Builder(
-        name = "PhotoLibrary",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).apply {
-        path(
-            fill = null,
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = 2f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round
-        ) {
-            moveTo(3f, 5f)
-            horizontalLineTo(21f)
-            verticalLineTo(19f)
-            horizontalLineTo(3f)
-            close()
-            moveTo(8.5f, 10f)
-            arcTo(1.5f, 1.5f, 0f, isMoreThanHalf = true, isPositiveArc = true, 8.5f, 7f)
-            arcTo(1.5f, 1.5f, 0f, isMoreThanHalf = false, isPositiveArc = true, 8.5f, 10f)
-            close()
-            moveTo(21f, 15f)
-            lineTo(16f, 10f)
-            lineTo(5f, 19f)
-        }
-    }.build()
-
-    val Table: ImageVector = ImageVector.Builder(
-        name = "Table",
+    val CalibrateTarget: ImageVector = ImageVector.Builder(
+        name = "CalibrateTarget",
         defaultWidth = 24.dp,
         defaultHeight = 24.dp,
         viewportWidth = 24f,
@@ -224,48 +153,20 @@ object OntikIcons {
             fill = null,
             stroke = SolidColor(Color.White),
             strokeLineWidth = 2f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round
+            strokeLineCap = StrokeCap.Round
         ) {
-            moveTo(3f, 4f)
-            horizontalLineTo(21f)
-            verticalLineTo(20f)
-            horizontalLineTo(3f)
-            close()
-            moveTo(3f, 10f)
-            horizontalLineTo(21f)
-            moveTo(10f, 4f)
-            verticalLineTo(20f)
-        }
-    }.build()
-
-    val Document: ImageVector = ImageVector.Builder(
-        name = "Document",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).apply {
-        path(
-            fill = null,
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = 2f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round
-        ) {
-            moveTo(14f, 2f)
+            moveTo(12f, 2f)
+            verticalLineTo(6f)
+            moveTo(12f, 18f)
+            verticalLineTo(22f)
+            moveTo(2f, 12f)
             horizontalLineTo(6f)
-            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = false, 4f, 4f)
-            verticalLineTo(20f)
-            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = false, 6f, 22f)
-            horizontalLineTo(18f)
-            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = false, 20f, 20f)
-            verticalLineTo(8f)
-            lineTo(14f, 2f)
+            moveTo(18f, 12f)
+            horizontalLineTo(22f)
+            moveTo(12f, 17f)
+            arcTo(5f, 5f, 0f, isMoreThanHalf = true, isPositiveArc = false, 12f, 7f)
+            arcTo(5f, 5f, 0f, isMoreThanHalf = false, isPositiveArc = false, 12f, 17f)
             close()
-            moveTo(14f, 2f)
-            verticalLineTo(8f)
-            horizontalLineTo(20f)
         }
     }.build()
 
@@ -297,8 +198,33 @@ object OntikIcons {
         }
     }.build()
 
-    val FileUpload: ImageVector = ImageVector.Builder(
-        name = "FileUpload",
+    val BugMask: ImageVector = ImageVector.Builder(
+        name = "BugMask",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = null,
+            stroke = SolidColor(Color.White),
+            strokeLineWidth = 2f,
+            strokeLineCap = StrokeCap.Round
+        ) {
+            moveTo(4f, 4f)
+            horizontalLineTo(20f)
+            verticalLineTo(20f)
+            horizontalLineTo(4f)
+            close()
+            moveTo(4f, 12f)
+            horizontalLineTo(20f)
+            moveTo(12f, 4f)
+            verticalLineTo(20f)
+        }
+    }.build()
+
+    val ScienceTest: ImageVector = ImageVector.Builder(
+        name = "ScienceTest",
         defaultWidth = 24.dp,
         defaultHeight = 24.dp,
         viewportWidth = 24f,
@@ -311,17 +237,16 @@ object OntikIcons {
             strokeLineCap = StrokeCap.Round,
             strokeLineJoin = StrokeJoin.Round
         ) {
-            moveTo(4f, 17f)
-            verticalLineTo(19f)
-            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = false, 6f, 21f)
-            horizontalLineTo(18f)
-            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = false, 20f, 19f)
-            verticalLineTo(17f)
-            moveTo(12f, 15f)
+            moveTo(9f, 3f)
+            horizontalLineTo(15f)
+            moveTo(10f, 3f)
+            verticalLineTo(9f)
+            lineTo(5f, 19f)
+            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = false, 7f, 21f)
+            horizontalLineTo(17f)
+            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = false, 19f, 19f)
+            lineTo(14f, 9f)
             verticalLineTo(3f)
-            moveTo(7f, 8f)
-            lineTo(12f, 3f)
-            lineTo(17f, 8f)
         }
     }.build()
 }

@@ -8,13 +8,15 @@ data class CountSessionEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val timestampMs: Long,
-    val mode: String, // "LIVE" or "PHOTO"
+    val label: String,
+    val presetName: String,
     val finalCount: Int,
-    val aiDetectedCount: Int,
+    val autoCount: Int,
     val manualDelta: Int,
     val direction: String,
-    val confidenceThreshold: Float,
     val durationSeconds: Long,
-    val modelName: String,
+    val isTestModeSession: Boolean = false,
+    val expectedTestCount: Int = 100,
+    val accuracyErrorPercent: Float = 0f,
     val notes: String = ""
 )

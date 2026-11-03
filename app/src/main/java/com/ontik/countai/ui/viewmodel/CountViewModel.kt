@@ -2,31 +2,29 @@ package com.ontik.countai.ui.viewmodel
 
 import android.app.Application
 import android.graphics.Bitmap
-import android.net.Uri
 import android.os.SystemClock
 import androidx.camera.core.ImageProxy
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.ontik.countai.ai.LineCrossingEvaluator
-import com.ontik.countai.ai.MultiObjectTracker
-import com.ontik.countai.ai.ObjectDetectorContract
-import com.ontik.countai.ai.TFLiteYoloDetector
+import com.ontik.countai.cv.KalmanHungarianTracker
+import com.ontik.countai.cv.OpenCvGrainProcessor
 import com.ontik.countai.data.local.CountSessionEntity
 import com.ontik.countai.data.repository.AppSettings
 import com.ontik.countai.data.repository.CountRepository
 import com.ontik.countai.data.repository.SettingsRepository
+import com.ontik.countai.domain.model.AccuracyConfidenceLevel
 import com.ontik.countai.domain.model.AppLanguage
+import com.ontik.countai.domain.model.AppThemeMode
 import com.ontik.countai.domain.model.CountingDirection
-import com.ontik.countai.domain.model.DetectionResult
-import com.ontik.countai.domain.model.ManualPhotoPoint
-import com.ontik.countai.domain.model.ModelEngineState
-import com.ontik.countai.domain.model.ModelProfile
+import com.ontik.countai.domain.model.DebugFrameSnapshot
+import com.ontik.countai.domain.model.GrainPreset
 import com.ontik.countai.domain.model.NormalizedRect
-import com.ontik.countai.domain.model.TrackedObject
+import com.ontik.countai.domain.model.TrackedGrain
 import com.ontik.countai.util.ImageProxyUtils
 import com.ontik.countai.util.SessionExportHelper
+import com.ontik.countai.util.SoundFeedbackManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,48 +33,47 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.hypot
+import kotlin.math.abs
 
-enum class LiveCountingState {
-    IDLE,
-    RUNNING,
+enum class EngineStatus {
+    CALIBRATING,
+    READY,
+    COUNTING,
     PAUSED
 }
 
-data class LiveUiState(
-    val countingState: LiveCountingState = LiveCountingState.RUNNING,
-    val aiCrossedCount: Int = 0,
+data class LiveCountingUiState(
+    val status: EngineStatus = EngineStatus.CALIBRATING,
+    val calibrationProgress: Float = 0f,
+    val isCalibrated: Boolean = false,
+    val cameraLockedAfterCalibration: Boolean = false,
+    val autoCountLineA: Int = 0,
+    val autoCountLineB: Int = 0,
     val manualDelta: Int = 0,
-    val currentlyDetectedInZone: Int = 0,
-    val trackedObjects: List<TrackedObject> = emptyList(),
-    val inferenceTimeMs: Long = 0L,
+    val inZoneGrainCount: Int = 0,
+    val countRatePerSec: Float = 0f,
+    val currentFps: Int = 30,
+    val lowFpsWarning: Boolean = false,
+    val confidenceBadge: AccuracyConfidenceLevel = AccuracyConfidenceLevel.GOOD,
+    val learnedSingleGrainAreaPx: Float = 110f,
+    val noiseStd: Double = 2.5,
+    val trackedGrains: List<TrackedGrain> = emptyList(),
+    val debugMaskBitmap: Bitmap? = null,
     val torchEnabled: Boolean = false,
-    val isAdjustingZone: Boolean = false,
-    val statusBannerMessage: String? = null,
-    val modelEngineState: ModelEngineState = ModelEngineState.Uninitialized,
-    val sessionStartElapsedMs: Long = SystemClock.elapsedRealtime(),
-    val lastCountPulseTimestamp: Long = 0L
+    val isTestMode100Active: Boolean = false,
+    val contextualHintEn: String? = null,
+    val contextualHintBn: String? = null,
+    val lastCountPulseTimestampMs: Long = 0L,
+    val lastMilestoneHundredTimestampMs: Long = 0L,
+    val sessionStartElapsedMs: Long = SystemClock.elapsedRealtime()
 ) {
     val totalCount: Int
-        get() = (aiCrossedCount + manualDelta).coerceAtLeast(0)
-}
+        get() = (autoCountLineA + manualDelta).coerceAtLeast(0)
 
-data class PhotoCountingUiState(
-    val bitmap: Bitmap? = null,
-    val isAnalyzing: Boolean = false,
-    val aiDetections: List<DetectionResult> = emptyList(),
-    val suppressedDetectionIndices: Set<Int> = emptySet(),
-    val manualAddedPoints: List<ManualPhotoPoint> = emptyList(),
-    val manualDelta: Int = 0,
-    val inferenceTimeMs: Long = 0L,
-    val statusMessage: String? = null
-) {
-    val activeAiCount: Int
-        get() = (aiDetections.size - suppressedDetectionIndices.size).coerceAtLeast(0)
-
-    val totalCount: Int
-        get() = (activeAiCount + manualAddedPoints.size + manualDelta).coerceAtLeast(0)
+    val verificationMismatchWarning: Boolean
+        get() = autoCountLineB > 0 && abs(autoCountLineA - autoCountLineB) >= 3
 }
 
 class CountViewModel(
@@ -97,374 +94,174 @@ class CountViewModel(
         initialValue = emptyList()
     )
 
-    private val _liveState = MutableStateFlow(LiveUiState())
-    val liveState: StateFlow<LiveUiState> = _liveState.asStateFlow()
+    private val _uiState = MutableStateFlow(LiveCountingUiState())
+    val uiState: StateFlow<LiveCountingUiState> = _uiState.asStateFlow()
 
-    private val _photoState = MutableStateFlow(PhotoCountingUiState())
-    val photoState: StateFlow<PhotoCountingUiState> = _photoState.asStateFlow()
-
-    private var detector: ObjectDetectorContract? = null
-    private val tracker = MultiObjectTracker()
+    private val cvProcessor = OpenCvGrainProcessor()
+    private val tracker = KalmanHungarianTracker()
+    private val soundManager = SoundFeedbackManager()
     private val isProcessingFrame = AtomicBoolean(false)
 
-    private var activeProfileId: String = ""
-    private var activeCustomPath: String? = null
-    private var activeThreads: Int = 4
+    // Undo history stack (stores incremental count additions so user can undo the last count)
+    private val countUndoStack = ArrayDeque<Int>(30)
 
-    init {
-        viewModelScope.launch(Dispatchers.Default) {
-            settingsRepository.settingsFlow.collect { cfg ->
-                if (detector == null ||
-                    cfg.modelProfile.id != activeProfileId ||
-                    cfg.customModelPath != activeCustomPath ||
-                    cfg.cpuThreads != activeThreads
-                ) {
-                    rebuildDetector(cfg)
-                }
-            }
-        }
-    }
+    // Rolling timestamps of counted grains in the last 3 seconds to compute Rate/sec
+    private val recentCountTimestamps = ArrayDeque<Pair<Long, Int>>(60)
 
-    @Synchronized
-    private fun rebuildDetector(cfg: AppSettings) {
-        detector?.close()
-        activeProfileId = cfg.modelProfile.id
-        activeCustomPath = cfg.customModelPath
-        activeThreads = cfg.cpuThreads
+    // FPS measurement window
+    private val frameTimestamps = ArrayDeque<Long>(35)
 
-        val newDetector = TFLiteYoloDetector(
-            context = getApplication(),
-            profile = cfg.modelProfile,
-            customModelFilePath = cfg.customModelPath,
-            numThreads = cfg.cpuThreads
-        )
-        detector = newDetector
-        _liveState.update {
-            it.copy(
-                modelEngineState = newDetector.engineState,
-                statusBannerMessage = null
-            )
-        }
-    }
+    // 10-second Debug Recorder buffer
+    private val debugSnapshots = ArrayDeque<DebugFrameSnapshot>(320)
 
-    fun startLiveCounting() {
-        _liveState.update { state ->
-            val startMs = if (state.sessionStartElapsedMs == 0L) {
-                SystemClock.elapsedRealtime()
-            } else {
-                state.sessionStartElapsedMs
-            }
+    fun startCounting() {
+        _uiState.update { state ->
+            val startMs = if (state.sessionStartElapsedMs == 0L) SystemClock.elapsedRealtime() else state.sessionStartElapsedMs
             state.copy(
-                countingState = LiveCountingState.RUNNING,
+                status = EngineStatus.COUNTING,
                 sessionStartElapsedMs = startMs
             )
         }
     }
 
-    fun pauseLiveCounting() {
-        _liveState.update { it.copy(countingState = LiveCountingState.PAUSED) }
+    fun pauseCounting() {
+        _uiState.update { it.copy(status = EngineStatus.PAUSED) }
     }
 
-    fun resumeLiveCounting() {
-        _liveState.update { it.copy(countingState = LiveCountingState.RUNNING) }
+    fun toggleStartPause() {
+        val current = _uiState.value.status
+        if (current == EngineStatus.COUNTING) {
+            pauseCounting()
+        } else {
+            startCounting()
+        }
     }
 
-    fun resetLiveCounting() {
+    fun resetCount() {
         tracker.reset()
-        _liveState.update {
-            it.copy(
-                countingState = LiveCountingState.RUNNING,
-                aiCrossedCount = 0,
+        countUndoStack.clear()
+        recentCountTimestamps.clear()
+        _uiState.update { state ->
+            state.copy(
+                status = if (state.isCalibrated) EngineStatus.READY else EngineStatus.CALIBRATING,
+                autoCountLineA = 0,
+                autoCountLineB = 0,
                 manualDelta = 0,
-                currentlyDetectedInZone = 0,
-                trackedObjects = emptyList(),
+                inZoneGrainCount = 0,
+                countRatePerSec = 0f,
+                trackedGrains = emptyList(),
                 sessionStartElapsedMs = SystemClock.elapsedRealtime()
             )
         }
     }
 
-    fun adjustLiveCountManually(delta: Int) {
-        _liveState.update { state ->
-            val nextTotal = state.totalCount + delta
-            if (nextTotal < 0) state else state.copy(manualDelta = state.manualDelta + delta)
+    fun triggerAutoCalibrate() {
+        tracker.reset()
+        cvProcessor.startAutoCalibration()
+        _uiState.update {
+            it.copy(
+                status = EngineStatus.CALIBRATING,
+                calibrationProgress = 0f,
+                isCalibrated = false,
+                cameraLockedAfterCalibration = false,
+                contextualHintEn = "Calibrating empty surface (30 frames)...",
+                contextualHintBn = "খালি পৃষ্ঠ ক্যালিব্রেট হচ্ছে (৩০ ফ্রেম)..."
+            )
+        }
+    }
+
+    fun triggerSingleGrainSizeCalibration() {
+        cvProcessor.startSingleGrainSizeCalibration()
+        _uiState.update {
+            it.copy(
+                contextualHintEn = "Drop a few isolated grains to learn single-grain size",
+                contextualHintBn = "একক দানার আকার শেখার জন্য কয়েকটি আলাদা দানা বক্সে রাখুন"
+            )
+        }
+    }
+
+    fun adjustCountManually(delta: Int) {
+        _uiState.update { state ->
+            val next = state.totalCount + delta
+            if (next < 0) state else {
+                if (delta > 0) countUndoStack.addLast(delta)
+                state.copy(manualDelta = state.manualDelta + delta)
+            }
+        }
+    }
+
+    fun undoLastCount() {
+        _uiState.update { state ->
+            if (state.totalCount <= 0) return@update state
+            val lastIncrement = if (countUndoStack.isNotEmpty()) countUndoStack.removeLast() else 1
+            val deduct = lastIncrement.coerceAtMost(state.totalCount)
+            state.copy(manualDelta = state.manualDelta - deduct)
         }
     }
 
     fun toggleTorch() {
-        _liveState.update { it.copy(torchEnabled = !it.torchEnabled) }
+        _uiState.update { it.copy(torchEnabled = !it.torchEnabled) }
     }
 
-    fun toggleZoneAdjustmentMode() {
-        _liveState.update { it.copy(isAdjustingZone = !it.isAdjustingZone) }
+    fun toggleTestMode100() {
+        resetCount()
+        _uiState.update { state ->
+            val nextTest = !state.isTestMode100Active
+            state.copy(
+                isTestMode100Active = nextTest,
+                status = EngineStatus.COUNTING,
+                contextualHintEn = if (nextTest) "100-Grain Test Mode Active: Drop exactly 100 grains, then tap Save" else null,
+                contextualHintBn = if (nextTest) "১০০ দানা টেস্ট মোড চালু: ঠিক ১০০টি দানা পার করে সেভ চাপুন" else null
+            )
+        }
     }
 
-    fun saveCurrentLiveSession(notes: String = ""): Int {
-        val current = _liveState.value
+    fun saveSessionToHistory(customLabel: String = "", customNotes: String = ""): CountSessionEntity? {
+        val st = _uiState.value
         val cfg = settings.value
-        val effectiveCount = if (current.totalCount > 0) current.totalCount else current.currentlyDetectedInZone
-        if (effectiveCount <= 0 && current.aiCrossedCount <= 0) return 0
+        val finalTotal = if (st.totalCount > 0) st.totalCount else st.inZoneGrainCount
+        if (finalTotal <= 0 && !st.isTestMode100Active) return null
 
-        val durationSec = if (current.sessionStartElapsedMs > 0L) {
-            ((SystemClock.elapsedRealtime() - current.sessionStartElapsedMs) / 1000L).coerceAtLeast(1L)
+        val durationSec = ((SystemClock.elapsedRealtime() - st.sessionStartElapsedMs) / 1000L).coerceAtLeast(1L)
+        val errPct = if (st.isTestMode100Active) {
+            abs(finalTotal - 100).toFloat()
         } else {
-            1L
+            0f
         }
-        val modelLabel = when (val st = current.modelEngineState) {
-            is ModelEngineState.Ready -> st.modelName
-            is ModelEngineState.FallbackBuiltInReady -> "Built-In Smart Vision"
-            else -> cfg.modelProfile.titleEn
+        val defaultLabel = if (st.isTestMode100Active) {
+            "100-Grain Accuracy Test (${String.format(java.util.Locale.US, "%.1f%%", 100f - errPct)} acc)"
+        } else {
+            cfg.activePreset.nameEn
         }
+
+        val entity = CountSessionEntity(
+            timestampMs = System.currentTimeMillis(),
+            label = customLabel.ifBlank { defaultLabel },
+            presetName = cfg.activePreset.nameEn,
+            finalCount = finalTotal,
+            autoCount = st.autoCountLineA,
+            manualDelta = st.manualDelta,
+            direction = cfg.countingDirection.displayNameEn,
+            durationSeconds = durationSec,
+            isTestModeSession = st.isTestMode100Active,
+            expectedTestCount = 100,
+            accuracyErrorPercent = errPct,
+            notes = customNotes
+        )
 
         viewModelScope.launch(Dispatchers.IO) {
-            countRepository.saveSession(
-                CountSessionEntity(
-                    timestampMs = System.currentTimeMillis(),
-                    mode = "LIVE",
-                    finalCount = effectiveCount,
-                    aiDetectedCount = if (current.aiCrossedCount > 0) current.aiCrossedCount else current.currentlyDetectedInZone,
-                    manualDelta = current.manualDelta,
-                    direction = cfg.countingDirection.displayNameEn,
-                    confidenceThreshold = cfg.confidenceThreshold,
-                    durationSeconds = durationSec,
-                    modelName = modelLabel,
-                    notes = notes
-                )
-            )
+            countRepository.saveSession(entity)
         }
-        return effectiveCount
+        return entity
     }
 
-    fun processCameraFrame(imageProxy: ImageProxy) {
-        if (!isProcessingFrame.compareAndSet(false, true)) {
-            imageProxy.close()
-            return
-        }
-
-        viewModelScope.launch(Dispatchers.Default) {
-            try {
-                val cfg = settings.value
-                val bitmap = ImageProxyUtils.imageProxyToUprightBitmap(
-                    imageProxy = imageProxy,
-                    isFrontCamera = !cfg.useBackCamera
-                )
-                if (bitmap != null) {
-                    val activeDetector = detector
-                    if (activeDetector != null) {
-                        val output = activeDetector.detect(
-                            bitmap = bitmap,
-                            confidenceThreshold = cfg.confidenceThreshold,
-                            iouThreshold = cfg.iouThreshold,
-                            countingZone = cfg.countingZone
-                        )
-
-                        val tracked = tracker.update(output.detections)
-                        val nowMs = SystemClock.elapsedRealtime()
-
-                        var newlyCounted = 0
-                        if (_liveState.value.countingState == LiveCountingState.RUNNING) {
-                            val crossedList = LineCrossingEvaluator.findNewlyCrossedObjects(
-                                trackedObjects = tracked,
-                                countingZone = cfg.countingZone,
-                                linePositionNormalized = cfg.countingLinePosition,
-                                direction = cfg.countingDirection
-                            )
-                            for (crossedObj in crossedList) {
-                                tracker.markTrackAsCounted(crossedObj.trackId, nowMs)
-                                newlyCounted++
-                            }
-                        }
-
-                        val refreshedTracked = if (newlyCounted > 0) {
-                            tracked.map { t ->
-                                if (t.hasBeenCounted || LineCrossingEvaluator.findNewlyCrossedObjects(
-                                        listOf(t),
-                                        cfg.countingZone,
-                                        cfg.countingLinePosition,
-                                        cfg.countingDirection
-                                    ).isNotEmpty()
-                                ) {
-                                    t.copy(hasBeenCounted = true, crossedTimestampMs = nowMs)
-                                } else {
-                                    t
-                                }
-                            }
-                        } else {
-                            tracked
-                        }
-
-                        _liveState.update { prev ->
-                            prev.copy(
-                                aiCrossedCount = prev.aiCrossedCount + newlyCounted,
-                                currentlyDetectedInZone = output.detections.size,
-                                trackedObjects = refreshedTracked,
-                                inferenceTimeMs = output.inferenceTimeMs,
-                                lastCountPulseTimestamp = if (newlyCounted > 0) nowMs else prev.lastCountPulseTimestamp
-                            )
-                        }
-                    }
-                    bitmap.recycle()
-                }
-            } finally {
-                imageProxy.close()
-                isProcessingFrame.set(false)
-            }
-        }
-    }
-
-    fun analyzePhotoFromUri(uri: Uri) {
-        viewModelScope.launch(Dispatchers.Default) {
-            val lang = settings.value.language
-            _photoState.update {
-                it.copy(
-                    isAnalyzing = true,
-                    statusMessage = if (lang == AppLanguage.BANGLA) "ছবি বিশ্লেষণ করা হচ্ছে..." else "Analyzing photo..."
-                )
-            }
-            val bmp = ImageProxyUtils.loadUprightBitmapFromUri(getApplication(), uri, maxDimension = 1280)
-            if (bmp == null) {
-                _photoState.update {
-                    it.copy(
-                        isAnalyzing = false,
-                        statusMessage = if (lang == AppLanguage.BANGLA) "ছবিটি লোড করা যায়নি।" else "Could not decode the selected image."
-                    )
-                }
-                return@launch
-            }
-            analyzeBitmapForPhotoMode(bmp)
-        }
-    }
-
-    fun analyzeBitmapForPhotoMode(bitmap: Bitmap) {
-        viewModelScope.launch(Dispatchers.Default) {
-            _photoState.update {
-                it.copy(
-                    bitmap = bitmap,
-                    isAnalyzing = true,
-                    suppressedDetectionIndices = emptySet(),
-                    manualAddedPoints = emptyList(),
-                    manualDelta = 0
-                )
-            }
-            val cfg = settings.value
-            val lang = cfg.language
-            val activeDetector = detector
-            if (activeDetector == null) {
-                _photoState.update {
-                    it.copy(
-                        isAnalyzing = false,
-                        statusMessage = "Detector not initialized."
-                    )
-                }
-                return@launch
-            }
-
-            val output = activeDetector.detect(
-                bitmap = bitmap,
-                confidenceThreshold = cfg.confidenceThreshold,
-                iouThreshold = cfg.iouThreshold,
-                countingZone = null
-            )
-
-            val message = if (lang == AppLanguage.BANGLA) {
-                "মোট ${output.detections.size} টি বস্তু শনাক্ত হয়েছে (${output.inferenceTimeMs} ms)। কোনো বক্স বাদ দিতে বক্সে ট্যাপ করুন, বা নতুন যোগ করতে খালি জায়গায় ট্যাপ করুন।"
-            } else {
-                "Detected ${output.detections.size} objects in ${output.inferenceTimeMs} ms. Tap a box to remove it, or tap any missed item to add it."
-            }
-
-            _photoState.update {
-                it.copy(
-                    isAnalyzing = false,
-                    aiDetections = output.detections,
-                    inferenceTimeMs = output.inferenceTimeMs,
-                    statusMessage = message
-                )
-            }
-        }
-    }
-
-    fun onPhotoTap(normalizedX: Float, normalizedY: Float) {
-        val x = normalizedX.coerceIn(0f, 1f)
-        val y = normalizedY.coerceIn(0f, 1f)
-
-        _photoState.update { state ->
-            val hitManual = state.manualAddedPoints.firstOrNull { pt ->
-                hypot((pt.normalizedX - x).toDouble(), (pt.normalizedY - y).toDouble()) <= 0.038
-            }
-            if (hitManual != null) {
-                return@update state.copy(
-                    manualAddedPoints = state.manualAddedPoints.filterNot { it.id == hitManual.id }
-                )
-            }
-
-            val hitAiIndex = state.aiDetections.indexOfFirst { det ->
-                det.boundingBox.contains(x, y)
-            }
-            if (hitAiIndex >= 0) {
-                val updatedSuppressed = state.suppressedDetectionIndices.toMutableSet()
-                if (hitAiIndex in updatedSuppressed) {
-                    updatedSuppressed.remove(hitAiIndex)
-                } else {
-                    updatedSuppressed.add(hitAiIndex)
-                }
-                return@update state.copy(suppressedDetectionIndices = updatedSuppressed)
-            }
-
-            val newPoint = ManualPhotoPoint(
-                id = SystemClock.elapsedRealtimeNanos(),
-                normalizedX = x,
-                normalizedY = y
-            )
-            state.copy(manualAddedPoints = state.manualAddedPoints + newPoint)
-        }
-    }
-
-    fun adjustPhotoCountManually(delta: Int) {
-        _photoState.update { state ->
-            if (state.totalCount + delta < 0) state else state.copy(manualDelta = state.manualDelta + delta)
-        }
-    }
-
-    fun clearPhotoManualAdjustments() {
-        _photoState.update {
-            it.copy(
-                suppressedDetectionIndices = emptySet(),
-                manualAddedPoints = emptyList(),
-                manualDelta = 0
-            )
-        }
-    }
-
-    fun savePhotoSession(notes: String = "") {
-        val photo = _photoState.value
-        val cfg = settings.value
-        if (photo.bitmap == null) return
-
-        val modelLabel = when (val st = _liveState.value.modelEngineState) {
-            is ModelEngineState.Ready -> st.modelName
-            else -> "Built-In Smart Vision"
-        }
-
-        val netManual = photo.manualAddedPoints.size - photo.suppressedDetectionIndices.size + photo.manualDelta
-
+    fun updateHistorySession(session: CountSessionEntity) {
         viewModelScope.launch(Dispatchers.IO) {
-            countRepository.saveSession(
-                CountSessionEntity(
-                    timestampMs = System.currentTimeMillis(),
-                    mode = "PHOTO",
-                    finalCount = photo.totalCount,
-                    aiDetectedCount = photo.aiDetections.size,
-                    manualDelta = netManual,
-                    direction = "Static Photo",
-                    confidenceThreshold = cfg.confidenceThreshold,
-                    durationSeconds = (photo.inferenceTimeMs / 1000L).coerceAtLeast(1L),
-                    modelName = modelLabel,
-                    notes = notes
-                )
-            )
+            countRepository.updateSession(session)
         }
     }
 
-    fun deleteSession(session: CountSessionEntity) {
+    fun deleteHistorySession(session: CountSessionEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             countRepository.deleteSession(session)
         }
@@ -476,7 +273,7 @@ class CountViewModel(
         }
     }
 
-    fun exportHistoryAsCsv() {
+    fun exportHistoryCsv() {
         val list = historySessions.value
         if (list.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
@@ -485,74 +282,262 @@ class CountViewModel(
         }
     }
 
-    fun exportHistoryAsTxt() {
-        val list = historySessions.value
-        if (list.isEmpty()) return
+    fun exportLast10SecondsDebugLog() {
+        val snaps = synchronized(debugSnapshots) { debugSnapshots.toList() }
+        if (snaps.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
-            val file = SessionExportHelper.exportToTxt(getApplication(), list)
-            SessionExportHelper.shareExportedFile(getApplication(), file, "text/plain")
+            val file: File = SessionExportHelper.exportDebugLog(getApplication(), snaps)
+            SessionExportHelper.shareExportedFile(getApplication(), file, "text/csv")
         }
+    }
+
+    fun processCameraFrame(imageProxy: ImageProxy) {
+        if (!isProcessingFrame.compareAndSet(false, true)) {
+            imageProxy.close()
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val nowMs = SystemClock.elapsedRealtime()
+                val cfg = settings.value
+
+                // Update rolling FPS
+                frameTimestamps.addLast(nowMs)
+                while (frameTimestamps.size > 1 && nowMs - frameTimestamps.first() > 1000L) {
+                    frameTimestamps.removeFirst()
+                }
+                val measuredFps = frameTimestamps.size.coerceIn(1, 60)
+
+                val bmp = ImageProxyUtils.imageProxyToUprightBitmap(
+                    imageProxy = imageProxy,
+                    isFrontCamera = !cfg.useBackCamera
+                )
+                if (bmp != null) {
+                    val cvOut = cvProcessor.processFrame(
+                        frameBitmap = bmp,
+                        roiNormalized = cfg.roiRect,
+                        sensitivity = cfg.sensitivity,
+                        minAreaPx = cfg.minAreaPx,
+                        maxAreaPx = cfg.maxAreaPx,
+                        morphKernelSize = cfg.morphKernelSize,
+                        autoSingleGrainSize = cfg.autoSingleGrainSize,
+                        manualSingleGrainAreaPx = cfg.manualSingleGrainAreaPx,
+                        generateDebugMask = cfg.showDebugMask,
+                        currentFps = measuredFps
+                    )
+
+                    val prevStatus = _uiState.value.status
+                    val nextStatus = when {
+                        cvOut.isCalibrating -> EngineStatus.CALIBRATING
+                        prevStatus == EngineStatus.CALIBRATING && cvOut.isCalibrated -> EngineStatus.COUNTING
+                        else -> prevStatus
+                    }
+
+                    val countingActive = nextStatus == EngineStatus.COUNTING && cvOut.isCalibrated
+
+                    val trackerOut = tracker.step(
+                        blobs = cvOut.blobs,
+                        timestampMs = nowMs,
+                        baseGatingDistance = cfg.trackingDistanceNormalized,
+                        lineAPos = cfg.lineAPosition,
+                        lineBPos = if (cfg.enableVerificationLineB) cfg.lineBPosition else null,
+                        hysteresis = cfg.lineHysteresisNormalized,
+                        direction = cfg.countingDirection,
+                        allowBidirectionalReCount = true,
+                        isCountingActive = countingActive
+                    )
+
+                    val addedCount = trackerOut.newlyCountedLineA
+                    if (addedCount > 0) {
+                        countUndoStack.addLast(addedCount)
+                        while (countUndoStack.size > 30) countUndoStack.removeFirst()
+                        recentCountTimestamps.addLast(nowMs to addedCount)
+
+                        if (cfg.soundBeepEnabled) {
+                            soundManager.playCountTick(cfg.soundVolume)
+                        }
+                    }
+
+                    while (recentCountTimestamps.isNotEmpty() && nowMs - recentCountTimestamps.first().first > 2500L) {
+                        recentCountTimestamps.removeFirst()
+                    }
+                    val sumRecent = recentCountTimestamps.sumOf { it.second }
+                    val ratePerSec = sumRecent / 2.5f
+
+                    val inZoneTotalGrains = cvOut.blobs.sumOf { it.estimatedGrainCount }
+
+                    val prevTotal = _uiState.value.totalCount
+                    val newAutoA = _uiState.value.autoCountLineA + addedCount
+                    val newTotal = (newAutoA + _uiState.value.manualDelta).coerceAtLeast(0)
+                    val crossedHundredMilestone = addedCount > 0 && (newTotal / 100) > (prevTotal / 100)
+                    if (crossedHundredMilestone && cfg.soundBeepEnabled) {
+                        soundManager.playMilestoneChime(cfg.soundVolume)
+                    }
+
+                    // Record into 10-second debug recorder
+                    synchronized(debugSnapshots) {
+                        debugSnapshots.addLast(
+                            DebugFrameSnapshot(
+                                timestampMs = nowMs,
+                                totalCount = newTotal,
+                                inZoneCount = inZoneTotalGrains,
+                                fps = measuredFps,
+                                noiseStd = cvOut.noiseStd,
+                                singleGrainAreaPx = cvOut.learnedSingleGrainAreaPx
+                            )
+                        )
+                        while (debugSnapshots.isNotEmpty() && nowMs - debugSnapshots.first().timestampMs > 10_000L) {
+                            debugSnapshots.removeFirst()
+                        }
+                    }
+
+                    _uiState.update { state ->
+                        state.copy(
+                            status = nextStatus,
+                            calibrationProgress = cvOut.calibrationProgress,
+                            isCalibrated = cvOut.isCalibrated,
+                            cameraLockedAfterCalibration = cvOut.isCalibrated && cfg.lockCameraExposureFocus,
+                            autoCountLineA = newAutoA,
+                            autoCountLineB = state.autoCountLineB + trackerOut.newlyCountedLineB,
+                            inZoneGrainCount = inZoneTotalGrains,
+                            countRatePerSec = ratePerSec,
+                            currentFps = measuredFps,
+                            lowFpsWarning = trackerOut.frameDropDetected || measuredFps < 15,
+                            confidenceBadge = cvOut.confidenceLevel,
+                            learnedSingleGrainAreaPx = cvOut.learnedSingleGrainAreaPx,
+                            noiseStd = cvOut.noiseStd,
+                            trackedGrains = trackerOut.activeTracks,
+                            debugMaskBitmap = cvOut.debugMaskBitmap,
+                            contextualHintEn = cvOut.contextualHintEn ?: if (trackerOut.frameDropDetected) "Low FPS detected — gating widened automatically" else null,
+                            contextualHintBn = cvOut.contextualHintBn ?: if (trackerOut.frameDropDetected) "ফ্রেম রেট কম — ট্র্যাকিং গেট স্বয়ংক্রিয়ভাবে বাড়ানো হয়েছে" else null,
+                            lastCountPulseTimestampMs = if (addedCount > 0) nowMs else state.lastCountPulseTimestampMs,
+                            lastMilestoneHundredTimestampMs = if (crossedHundredMilestone) nowMs else state.lastMilestoneHundredTimestampMs
+                        )
+                    }
+
+                    bmp.recycle()
+                }
+            } finally {
+                imageProxy.close()
+                isProcessingFrame.set(false)
+            }
+        }
+    }
+
+    // Settings Delegations
+    fun applyPreset(preset: GrainPreset) {
+        viewModelScope.launch {
+            settingsRepository.applyPreset(preset)
+            cvProcessor.setManualSingleGrainArea(preset.defaultSingleGrainAreaPx)
+        }
+    }
+
+    fun saveCustomPreset() {
+        viewModelScope.launch { settingsRepository.saveCurrentAsCustomPreset() }
+    }
+
+    fun resetSettingsToDefaults() {
+        viewModelScope.launch { settingsRepository.resetAllToDefaults() }
     }
 
     fun updateLanguage(language: AppLanguage) {
         viewModelScope.launch { settingsRepository.updateLanguage(language) }
     }
 
-    fun updateConfidenceThreshold(value: Float) {
-        viewModelScope.launch { settingsRepository.updateConfidence(value) }
+    fun updateThemeMode(mode: AppThemeMode) {
+        viewModelScope.launch { settingsRepository.updateThemeMode(mode) }
     }
 
-    fun updateIouThreshold(value: Float) {
-        viewModelScope.launch { settingsRepository.updateIouThreshold(value) }
+    fun updateSensitivity(value: Float) {
+        viewModelScope.launch { settingsRepository.updateSensitivity(value) }
     }
 
-    fun resetSensitivityDefaults() {
-        viewModelScope.launch { settingsRepository.resetSensitivityDefaults() }
+    fun updateMinArea(value: Int) {
+        viewModelScope.launch { settingsRepository.updateMinArea(value) }
     }
 
-    fun updateCountingDirection(direction: CountingDirection) {
+    fun updateMaxArea(value: Int) {
+        viewModelScope.launch { settingsRepository.updateMaxArea(value) }
+    }
+
+    fun updateAutoSingleGrainSize(auto: Boolean) {
+        viewModelScope.launch { settingsRepository.updateAutoSingleGrainSize(auto) }
+    }
+
+    fun updateManualSingleGrainArea(areaPx: Float) {
+        cvProcessor.setManualSingleGrainArea(areaPx)
+        viewModelScope.launch { settingsRepository.updateManualSingleGrainArea(areaPx) }
+    }
+
+    fun updateTrackingDistance(dist: Float) {
+        viewModelScope.launch { settingsRepository.updateTrackingDistance(dist) }
+    }
+
+    fun updateLineHysteresis(hyst: Float) {
+        viewModelScope.launch { settingsRepository.updateLineHysteresis(hyst) }
+    }
+
+    fun updateMorphKernel(size: Int) {
+        viewModelScope.launch { settingsRepository.updateMorphKernel(size) }
+    }
+
+    fun updateDirection(direction: CountingDirection) {
         viewModelScope.launch { settingsRepository.updateDirection(direction) }
     }
 
-    fun updateModelProfile(profile: ModelProfile) {
-        viewModelScope.launch { settingsRepository.updateModelProfile(profile) }
+    fun updateVerificationLineB(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateVerificationLineB(enabled) }
     }
 
-    fun updateCameraSelection(useBackCamera: Boolean) {
-        viewModelScope.launch { settingsRepository.updateCameraSelection(useBackCamera) }
+    fun updateCameraFacing(useBack: Boolean) {
+        viewModelScope.launch { settingsRepository.updateCameraFacing(useBack) }
     }
 
-    fun updateHapticFeedback(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.updateHapticFeedback(enabled) }
+    fun updateTargetFps(fps: Int) {
+        viewModelScope.launch { settingsRepository.updateTargetFps(fps) }
     }
 
-    fun updateZoneAndLine(zone: NormalizedRect, linePos: Float) {
-        viewModelScope.launch { settingsRepository.updateCountingZoneAndLine(zone, linePos) }
+    fun updateLockCamera(locked: Boolean) {
+        viewModelScope.launch { settingsRepository.updateLockCamera(locked) }
     }
 
-    fun importCustomTfliteModel(uri: Uri, onResult: (Boolean, String) -> Unit) {
-        viewModelScope.launch {
-            val lang = settings.value.language
-            val result = settingsRepository.importCustomTfliteModel(uri)
-            result.fold(
-                onSuccess = { path ->
-                    val msg = if (lang == AppLanguage.BANGLA) {
-                        "মডেল সফলভাবে যুক্ত হয়েছে: ${path.substringAfterLast('/')}"
-                    } else {
-                        "Imported offline model: ${path.substringAfterLast('/')}"
-                    }
-                    onResult(true, msg)
-                },
-                onFailure = { err ->
-                    onResult(false, err.localizedMessage ?: "Failed to import model")
-                }
-            )
-        }
+    fun updateHaptic(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateHaptic(enabled) }
+    }
+
+    fun updateSoundBeep(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateSoundBeep(enabled) }
+    }
+
+    fun updateSoundVolume(volume: Float) {
+        viewModelScope.launch { settingsRepository.updateSoundVolume(volume) }
+    }
+
+    fun updateKeepScreenOn(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateKeepScreenOn(enabled) }
+    }
+
+    fun updateShowTrackIds(show: Boolean) {
+        viewModelScope.launch { settingsRepository.updateShowTrackIds(show) }
+    }
+
+    fun updateShowDebugMask(show: Boolean) {
+        viewModelScope.launch { settingsRepository.updateShowDebugMask(show) }
+    }
+
+    fun completeOnboarding() {
+        viewModelScope.launch { settingsRepository.setOnboardingCompleted() }
+    }
+
+    fun updateRoiAndLines(roi: NormalizedRect, lineA: Float, lineB: Float) {
+        viewModelScope.launch { settingsRepository.updateRoiAndLines(roi, lineA, lineB) }
     }
 
     override fun onCleared() {
         super.onCleared()
-        detector?.close()
+        cvProcessor.release()
+        soundManager.release()
     }
 }
 

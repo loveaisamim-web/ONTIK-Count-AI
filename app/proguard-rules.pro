@@ -1,5 +1,4 @@
-# Add project specific ProGuard rules here.
--keep class org.tensorflow.lite.** { *; }
--keep class com.ontik.countai.ai.** { *; }
+# ProGuard rules for OpenCV & Room
+-keep class org.opencv.** { *; }
 -keep class com.ontik.countai.data.local.** { *; }
--dontwarn org.tensorflow.lite.**
+-dontwarn org.opencv.**

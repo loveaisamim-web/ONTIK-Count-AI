@@ -1,31 +1,51 @@
 package com.ontik.countai.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
-private val LightColorScheme = lightColorScheme(
+private val LightColors = lightColorScheme(
     primary = OntikGreenPrimary,
-    onPrimary = WhiteBackground,
+    onPrimary = LightSurface,
     primaryContainer = OntikGreenLight,
     onPrimaryContainer = OntikGreenDark,
-    secondary = OntikGreenDark,
-    onSecondary = WhiteBackground,
-    background = WhiteBackground,
-    onBackground = TextPrimaryDark,
-    surface = WhiteBackground,
-    onSurface = TextPrimaryDark,
-    surfaceVariant = SoftGraySurface,
-    onSurfaceVariant = TextSecondarySlate,
-    outline = CardBorderGray,
-    error = DangerRed,
-    onError = WhiteBackground
+    secondary = OntikAmberAccent,
+    onSecondary = LightTextPrimary,
+    background = LightBackground,
+    onBackground = LightTextPrimary,
+    surface = LightSurface,
+    onSurface = LightTextPrimary,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = LightTextSecondary,
+    outline = LightBorder,
+    error = DangerRed
+)
+
+private val DarkColors = darkColorScheme(
+    primary = OntikGreenBright,
+    onPrimary = DarkBackground,
+    primaryContainer = OntikGreenDark,
+    onPrimaryContainer = OntikGreenLight,
+    secondary = OntikAmberAccent,
+    onSecondary = DarkBackground,
+    background = DarkBackground,
+    onBackground = DarkTextPrimary,
+    surface = DarkSurface,
+    onSurface = DarkTextPrimary,
+    surfaceVariant = DarkSurfaceVariant,
+    onSurfaceVariant = DarkTextSecondary,
+    outline = DarkBorder,
+    error = DangerRed
 )
 
 @Composable
-fun OntikCountAITheme(content: @Composable () -> Unit) {
+fun OntikCountAITheme(
+    darkTheme: Boolean = false,
+    content: @Composable () -> Unit
+) {
     MaterialTheme(
-        colorScheme = LightColorScheme,
+        colorScheme = if (darkTheme) DarkColors else LightColors,
         typography = OntikTypography,
         content = content
     )

@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">ONTIK Count AI</string>
+    <string name="tagline">উচ্চ-নির্ভুল অফলাইন শস্য ও বীজ গণনাকারী</string>
+    <string name="status_calibrating">ক্যালিব্রেট হচ্ছে</string>
+    <string name="status_ready">প্রস্তুত</string>
+    <string name="status_counting">গণনা চলছে</string>
+    <string name="status_paused">বিরতি</string>
+    <string name="btn_auto_calibrate">অটো ক্যালিব্রেট</string>
+    <string name="btn_start">শুরু করুন</string>
+    <string name="btn_pause">বিরতি</string>
+    <string name="btn_reset">রিসেট</string>
+    <string name="btn_save">সেভ</string>
+</resources>

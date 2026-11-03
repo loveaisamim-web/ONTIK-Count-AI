@@ -10,51 +10,44 @@ val OntikTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.ExtraBold,
-        fontSize = 48.sp,
-        lineHeight = 54.sp,
-        letterSpacing = (-1.0).sp,
-        color = TextPrimaryDark
+        fontSize = 68.sp,
+        lineHeight = 72.sp,
+        letterSpacing = (-1.5).sp
     ),
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
         fontSize = 22.sp,
-        lineHeight = 28.sp,
-        color = TextPrimaryDark
+        lineHeight = 28.sp
     ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
         fontSize = 18.sp,
-        lineHeight = 24.sp,
-        color = TextPrimaryDark
+        lineHeight = 24.sp
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
         fontSize = 15.sp,
-        lineHeight = 20.sp,
-        color = TextPrimaryDark
+        lineHeight = 20.sp
     ),
     bodyLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
-        lineHeight = 22.sp,
-        color = TextPrimaryDark
+        lineHeight = 22.sp
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
-        lineHeight = 18.sp,
-        color = TextSecondarySlate
+        lineHeight = 18.sp
     ),
     labelLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 13.sp,
-        lineHeight = 18.sp,
-        color = TextPrimaryDark
+        fontSize = 12.sp,
+        lineHeight = 16.sp
     )
 )

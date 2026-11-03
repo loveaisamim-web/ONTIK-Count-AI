@@ -1,7 +1,6 @@
 package com.ontik.countai.data.repository
 
 import android.content.Context
-import android.net.Uri
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
@@ -9,152 +8,266 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.ontik.countai.domain.model.AppLanguage
+import com.ontik.countai.domain.model.AppThemeMode
 import com.ontik.countai.domain.model.CountingDirection
-import com.ontik.countai.domain.model.ModelProfile
+import com.ontik.countai.domain.model.GrainPreset
 import com.ontik.countai.domain.model.NormalizedRect
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 
-private val Context.dataStore by preferencesDataStore(name = "ontik_settings_v2")
+private val Context.dataStore by preferencesDataStore(name = "ontik_opencv_settings")
 
 data class AppSettings(
     val language: AppLanguage = AppLanguage.BANGLA,
-    val confidenceThreshold: Float = 0.35f,
-    val iouThreshold: Float = 0.45f,
+    val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    val activePreset: GrainPreset = GrainPreset.RICE,
+    val sensitivity: Float = 0.50f,
+    val minAreaPx: Int = 18,
+    val maxAreaPx: Int = 4500,
+    val autoSingleGrainSize: Boolean = true,
+    val manualSingleGrainAreaPx: Float = 110f,
+    val trackingDistanceNormalized: Float = 0.14f,
+    val lineHysteresisNormalized: Float = 0.015f,
+    val morphKernelSize: Int = 3,
     val countingDirection: CountingDirection = CountingDirection.TOP_TO_BOTTOM,
-    val modelProfile: ModelProfile = ModelProfile.BUILTIN_SMALL_OBJECT_VISION,
-    val customModelPath: String? = null,
+    val enableVerificationLineB: Boolean = false,
     val useBackCamera: Boolean = true,
-    val hapticFeedbackEnabled: Boolean = true,
-    val countingZone: NormalizedRect = NormalizedRect(0.12f, 0.18f, 0.88f, 0.82f),
-    val countingLinePosition: Float = 0.50f,
-    val cpuThreads: Int = 4
+    val targetFps: Int = 30,
+    val lockCameraExposureFocus: Boolean = true,
+    val hapticEnabled: Boolean = true,
+    val soundBeepEnabled: Boolean = true,
+    val soundVolume: Float = 0.65f,
+    val keepScreenOn: Boolean = true,
+    val showTrackIds: Boolean = false,
+    val showDebugMask: Boolean = false,
+    val onboardingCompleted: Boolean = false,
+    val roiRect: NormalizedRect = NormalizedRect(0.10f, 0.16f, 0.90f, 0.82f),
+    val lineAPosition: Float = 0.50f,
+    val lineBPosition: Float = 0.68f
 )
 
 class SettingsRepository(private val context: Context) {
 
     private object Keys {
-        val LANGUAGE = stringPreferencesKey("app_language")
-        val CONFIDENCE = floatPreferencesKey("confidence_threshold")
-        val IOU = floatPreferencesKey("iou_threshold")
+        val LANGUAGE = stringPreferencesKey("language")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val PRESET = stringPreferencesKey("active_preset")
+        val SENSITIVITY = floatPreferencesKey("sensitivity")
+        val MIN_AREA = intPreferencesKey("min_area_px")
+        val MAX_AREA = intPreferencesKey("max_area_px")
+        val AUTO_GRAIN_SIZE = booleanPreferencesKey("auto_grain_size")
+        val MANUAL_GRAIN_AREA = floatPreferencesKey("manual_grain_area_px")
+        val TRACKING_DIST = floatPreferencesKey("tracking_dist")
+        val LINE_HYSTERESIS = floatPreferencesKey("line_hysteresis")
+        val MORPH_KERNEL = intPreferencesKey("morph_kernel")
         val DIRECTION = stringPreferencesKey("counting_direction")
-        val MODEL_PROFILE = stringPreferencesKey("model_profile")
-        val CUSTOM_MODEL_PATH = stringPreferencesKey("custom_model_path")
-        val USE_BACK_CAMERA = booleanPreferencesKey("use_back_camera")
-        val HAPTIC = booleanPreferencesKey("haptic_feedback")
-        val ZONE_LEFT = floatPreferencesKey("zone_left")
-        val ZONE_TOP = floatPreferencesKey("zone_top")
-        val ZONE_RIGHT = floatPreferencesKey("zone_right")
-        val ZONE_BOTTOM = floatPreferencesKey("zone_bottom")
-        val LINE_POS = floatPreferencesKey("line_position")
-        val CPU_THREADS = intPreferencesKey("cpu_threads")
+        val VERIFY_LINE_B = booleanPreferencesKey("verify_line_b")
+        val USE_BACK_CAM = booleanPreferencesKey("use_back_cam")
+        val TARGET_FPS = intPreferencesKey("target_fps")
+        val LOCK_CAMERA = booleanPreferencesKey("lock_camera")
+        val HAPTIC = booleanPreferencesKey("haptic_enabled")
+        val SOUND_BEEP = booleanPreferencesKey("sound_beep")
+        val SOUND_VOLUME = floatPreferencesKey("sound_volume")
+        val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
+        val SHOW_TRACK_IDS = booleanPreferencesKey("show_track_ids")
+        val SHOW_DEBUG_MASK = booleanPreferencesKey("show_debug_mask")
+        val ONBOARDING_DONE = booleanPreferencesKey("onboarding_done")
+        val ROI_LEFT = floatPreferencesKey("roi_left")
+        val ROI_TOP = floatPreferencesKey("roi_top")
+        val ROI_RIGHT = floatPreferencesKey("roi_right")
+        val ROI_BOTTOM = floatPreferencesKey("roi_bottom")
+        val LINE_A_POS = floatPreferencesKey("line_a_pos")
+        val LINE_B_POS = floatPreferencesKey("line_b_pos")
+
+        // Saved custom user preset values
+        val CUSTOM_SENS = floatPreferencesKey("custom_sens")
+        val CUSTOM_MIN_AREA = intPreferencesKey("custom_min_area")
+        val CUSTOM_MAX_AREA = intPreferencesKey("custom_max_area")
+        val CUSTOM_SINGLE_AREA = floatPreferencesKey("custom_single_area")
+        val CUSTOM_MORPH = intPreferencesKey("custom_morph")
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         val langCode = prefs[Keys.LANGUAGE] ?: AppLanguage.BANGLA.code
-        val language = AppLanguage.entries.firstOrNull { it.code == langCode } ?: AppLanguage.BANGLA
+        val lang = AppLanguage.entries.firstOrNull { it.code == langCode } ?: AppLanguage.BANGLA
+
+        val themeId = prefs[Keys.THEME_MODE] ?: AppThemeMode.SYSTEM.id
+        val theme = AppThemeMode.entries.firstOrNull { it.id == themeId } ?: AppThemeMode.SYSTEM
+
+        val presetId = prefs[Keys.PRESET] ?: GrainPreset.RICE.id
+        val preset = GrainPreset.entries.firstOrNull { it.id == presetId } ?: GrainPreset.RICE
 
         val dirName = prefs[Keys.DIRECTION] ?: CountingDirection.TOP_TO_BOTTOM.name
-        val direction = CountingDirection.entries.firstOrNull { it.name == dirName }
-            ?: CountingDirection.TOP_TO_BOTTOM
+        val dir = CountingDirection.entries.firstOrNull { it.name == dirName } ?: CountingDirection.TOP_TO_BOTTOM
 
-        val profileId = prefs[Keys.MODEL_PROFILE] ?: ModelProfile.BUILTIN_SMALL_OBJECT_VISION.id
-        val profile = ModelProfile.entries.firstOrNull { it.id == profileId }
-            ?: ModelProfile.BUILTIN_SMALL_OBJECT_VISION
-
-        val left = (prefs[Keys.ZONE_LEFT] ?: 0.12f).coerceIn(0.02f, 0.80f)
-        val top = (prefs[Keys.ZONE_TOP] ?: 0.18f).coerceIn(0.02f, 0.80f)
-        val right = (prefs[Keys.ZONE_RIGHT] ?: 0.88f).coerceIn(left + 0.15f, 0.98f)
-        val bottom = (prefs[Keys.ZONE_BOTTOM] ?: 0.82f).coerceIn(top + 0.15f, 0.98f)
+        val left = (prefs[Keys.ROI_LEFT] ?: 0.10f).coerceIn(0.04f, 0.75f)
+        val top = (prefs[Keys.ROI_TOP] ?: 0.16f).coerceIn(0.04f, 0.75f)
+        val right = (prefs[Keys.ROI_RIGHT] ?: 0.90f).coerceIn(left + 0.18f, 0.96f)
+        val bottom = (prefs[Keys.ROI_BOTTOM] ?: 0.82f).coerceIn(top + 0.18f, 0.96f)
 
         AppSettings(
-            language = language,
-            confidenceThreshold = (prefs[Keys.CONFIDENCE] ?: 0.35f).coerceIn(0.10f, 0.90f),
-            iouThreshold = (prefs[Keys.IOU] ?: 0.45f).coerceIn(0.20f, 0.80f),
-            countingDirection = direction,
-            modelProfile = profile,
-            customModelPath = prefs[Keys.CUSTOM_MODEL_PATH],
-            useBackCamera = prefs[Keys.USE_BACK_CAMERA] ?: true,
-            hapticFeedbackEnabled = prefs[Keys.HAPTIC] ?: true,
-            countingZone = NormalizedRect(left, top, right, bottom),
-            countingLinePosition = (prefs[Keys.LINE_POS] ?: 0.50f).coerceIn(0.10f, 0.90f),
-            cpuThreads = (prefs[Keys.CPU_THREADS] ?: 4).coerceIn(1, 8)
+            language = lang,
+            themeMode = theme,
+            activePreset = preset,
+            sensitivity = (prefs[Keys.SENSITIVITY] ?: preset.defaultSensitivity).coerceIn(0.10f, 0.90f),
+            minAreaPx = (prefs[Keys.MIN_AREA] ?: preset.defaultMinAreaPx).coerceIn(4, 2000),
+            maxAreaPx = (prefs[Keys.MAX_AREA] ?: preset.defaultMaxAreaPx).coerceIn(200, 50000),
+            autoSingleGrainSize = prefs[Keys.AUTO_GRAIN_SIZE] ?: true,
+            manualSingleGrainAreaPx = (prefs[Keys.MANUAL_GRAIN_AREA] ?: preset.defaultSingleGrainAreaPx).coerceIn(8f, 5000f),
+            trackingDistanceNormalized = (prefs[Keys.TRACKING_DIST] ?: preset.defaultTrackingDistanceNormalized).coerceIn(0.05f, 0.35f),
+            lineHysteresisNormalized = (prefs[Keys.LINE_HYSTERESIS] ?: preset.defaultLineHysteresisNormalized).coerceIn(0.004f, 0.05f),
+            morphKernelSize = (prefs[Keys.MORPH_KERNEL] ?: preset.defaultMorphKernelSize).coerceIn(3, 7),
+            countingDirection = dir,
+            enableVerificationLineB = prefs[Keys.VERIFY_LINE_B] ?: false,
+            useBackCamera = prefs[Keys.USE_BACK_CAM] ?: true,
+            targetFps = prefs[Keys.TARGET_FPS] ?: 30,
+            lockCameraExposureFocus = prefs[Keys.LOCK_CAMERA] ?: true,
+            hapticEnabled = prefs[Keys.HAPTIC] ?: true,
+            soundBeepEnabled = prefs[Keys.SOUND_BEEP] ?: true,
+            soundVolume = (prefs[Keys.SOUND_VOLUME] ?: 0.65f).coerceIn(0.1f, 1.0f),
+            keepScreenOn = prefs[Keys.KEEP_SCREEN_ON] ?: true,
+            showTrackIds = prefs[Keys.SHOW_TRACK_IDS] ?: false,
+            showDebugMask = prefs[Keys.SHOW_DEBUG_MASK] ?: false,
+            onboardingCompleted = prefs[Keys.ONBOARDING_DONE] ?: false,
+            roiRect = NormalizedRect(left, top, right, bottom),
+            lineAPosition = (prefs[Keys.LINE_A_POS] ?: 0.50f).coerceIn(0.10f, 0.90f),
+            lineBPosition = (prefs[Keys.LINE_B_POS] ?: 0.68f).coerceIn(0.15f, 0.92f)
         )
+    }
+
+    suspend fun applyPreset(preset: GrainPreset) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.PRESET] = preset.id
+            if (preset == GrainPreset.CUSTOM) {
+                prefs[Keys.SENSITIVITY] = prefs[Keys.CUSTOM_SENS] ?: preset.defaultSensitivity
+                prefs[Keys.MIN_AREA] = prefs[Keys.CUSTOM_MIN_AREA] ?: preset.defaultMinAreaPx
+                prefs[Keys.MAX_AREA] = prefs[Keys.CUSTOM_MAX_AREA] ?: preset.defaultMaxAreaPx
+                prefs[Keys.MANUAL_GRAIN_AREA] = prefs[Keys.CUSTOM_SINGLE_AREA] ?: preset.defaultSingleGrainAreaPx
+                prefs[Keys.MORPH_KERNEL] = prefs[Keys.CUSTOM_MORPH] ?: preset.defaultMorphKernelSize
+            } else {
+                prefs[Keys.SENSITIVITY] = preset.defaultSensitivity
+                prefs[Keys.MIN_AREA] = preset.defaultMinAreaPx
+                prefs[Keys.MAX_AREA] = preset.defaultMaxAreaPx
+                prefs[Keys.MANUAL_GRAIN_AREA] = preset.defaultSingleGrainAreaPx
+                prefs[Keys.MORPH_KERNEL] = preset.defaultMorphKernelSize
+                prefs[Keys.TRACKING_DIST] = preset.defaultTrackingDistanceNormalized
+                prefs[Keys.LINE_HYSTERESIS] = preset.defaultLineHysteresisNormalized
+            }
+        }
+    }
+
+    suspend fun saveCurrentAsCustomPreset() {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.CUSTOM_SENS] = prefs[Keys.SENSITIVITY] ?: 0.50f
+            prefs[Keys.CUSTOM_MIN_AREA] = prefs[Keys.MIN_AREA] ?: 18
+            prefs[Keys.CUSTOM_MAX_AREA] = prefs[Keys.MAX_AREA] ?: 4500
+            prefs[Keys.CUSTOM_SINGLE_AREA] = prefs[Keys.MANUAL_GRAIN_AREA] ?: 110f
+            prefs[Keys.CUSTOM_MORPH] = prefs[Keys.MORPH_KERNEL] ?: 3
+            prefs[Keys.PRESET] = GrainPreset.CUSTOM.id
+        }
+    }
+
+    suspend fun resetAllToDefaults() {
+        applyPreset(GrainPreset.RICE)
     }
 
     suspend fun updateLanguage(language: AppLanguage) {
         context.dataStore.edit { it[Keys.LANGUAGE] = language.code }
     }
 
-    suspend fun updateConfidence(value: Float) {
-        context.dataStore.edit { it[Keys.CONFIDENCE] = value.coerceIn(0.10f, 0.90f) }
+    suspend fun updateThemeMode(mode: AppThemeMode) {
+        context.dataStore.edit { it[Keys.THEME_MODE] = mode.id }
     }
 
-    suspend fun updateIouThreshold(value: Float) {
-        context.dataStore.edit { it[Keys.IOU] = value.coerceIn(0.20f, 0.80f) }
+    suspend fun updateSensitivity(value: Float) {
+        context.dataStore.edit { it[Keys.SENSITIVITY] = value.coerceIn(0.10f, 0.90f) }
     }
 
-    suspend fun resetSensitivityDefaults() {
-        context.dataStore.edit { prefs ->
-            prefs[Keys.CONFIDENCE] = 0.35f
-            prefs[Keys.IOU] = 0.45f
-        }
+    suspend fun updateMinArea(value: Int) {
+        context.dataStore.edit { it[Keys.MIN_AREA] = value.coerceIn(4, 2000) }
+    }
+
+    suspend fun updateMaxArea(value: Int) {
+        context.dataStore.edit { it[Keys.MAX_AREA] = value.coerceIn(200, 50000) }
+    }
+
+    suspend fun updateAutoSingleGrainSize(auto: Boolean) {
+        context.dataStore.edit { it[Keys.AUTO_GRAIN_SIZE] = auto }
+    }
+
+    suspend fun updateManualSingleGrainArea(areaPx: Float) {
+        context.dataStore.edit { it[Keys.MANUAL_GRAIN_AREA] = areaPx.coerceIn(8f, 5000f) }
+    }
+
+    suspend fun updateTrackingDistance(dist: Float) {
+        context.dataStore.edit { it[Keys.TRACKING_DIST] = dist.coerceIn(0.05f, 0.35f) }
+    }
+
+    suspend fun updateLineHysteresis(hyst: Float) {
+        context.dataStore.edit { it[Keys.LINE_HYSTERESIS] = hyst.coerceIn(0.004f, 0.05f) }
+    }
+
+    suspend fun updateMorphKernel(size: Int) {
+        val odd = if (size <= 3) 3 else if (size <= 5) 5 else 7
+        context.dataStore.edit { it[Keys.MORPH_KERNEL] = odd }
     }
 
     suspend fun updateDirection(direction: CountingDirection) {
         context.dataStore.edit { it[Keys.DIRECTION] = direction.name }
     }
 
-    suspend fun updateModelProfile(profile: ModelProfile) {
-        context.dataStore.edit { it[Keys.MODEL_PROFILE] = profile.id }
+    suspend fun updateVerificationLineB(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.VERIFY_LINE_B] = enabled }
     }
 
-    suspend fun updateCameraSelection(useBack: Boolean) {
-        context.dataStore.edit { it[Keys.USE_BACK_CAMERA] = useBack }
+    suspend fun updateCameraFacing(useBack: Boolean) {
+        context.dataStore.edit { it[Keys.USE_BACK_CAM] = useBack }
     }
 
-    suspend fun updateHapticFeedback(enabled: Boolean) {
+    suspend fun updateTargetFps(fps: Int) {
+        context.dataStore.edit { it[Keys.TARGET_FPS] = if (fps >= 60) 60 else 30 }
+    }
+
+    suspend fun updateLockCamera(locked: Boolean) {
+        context.dataStore.edit { it[Keys.LOCK_CAMERA] = locked }
+    }
+
+    suspend fun updateHaptic(enabled: Boolean) {
         context.dataStore.edit { it[Keys.HAPTIC] = enabled }
     }
 
-    suspend fun updateCountingZoneAndLine(zone: NormalizedRect, linePos: Float) {
-        context.dataStore.edit { prefs ->
-            prefs[Keys.ZONE_LEFT] = zone.left.coerceIn(0.02f, 0.80f)
-            prefs[Keys.ZONE_TOP] = zone.top.coerceIn(0.02f, 0.80f)
-            prefs[Keys.ZONE_RIGHT] = zone.right.coerceIn(0.20f, 0.98f)
-            prefs[Keys.ZONE_BOTTOM] = zone.bottom.coerceIn(0.20f, 0.98f)
-            prefs[Keys.LINE_POS] = linePos.coerceIn(0.10f, 0.90f)
-        }
+    suspend fun updateSoundBeep(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SOUND_BEEP] = enabled }
     }
 
-    suspend fun importCustomTfliteModel(uri: Uri): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val modelsDir = File(context.filesDir, "models").apply { mkdirs() }
-            val targetFile = File(modelsDir, "custom_imported_model.tflite")
+    suspend fun updateSoundVolume(volume: Float) {
+        context.dataStore.edit { it[Keys.SOUND_VOLUME] = volume.coerceIn(0.1f, 1.0f) }
+    }
 
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(targetFile).use { output ->
-                    input.copyTo(output)
-                }
-            } ?: return@withContext Result.failure(IllegalStateException("Unable to read selected file URI"))
+    suspend fun updateKeepScreenOn(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.KEEP_SCREEN_ON] = enabled }
+    }
 
-            if (targetFile.length() < 128) {
-                targetFile.delete()
-                return@withContext Result.failure(IllegalArgumentException("Selected file is too small to be a valid .tflite model"))
-            }
+    suspend fun updateShowTrackIds(show: Boolean) {
+        context.dataStore.edit { it[Keys.SHOW_TRACK_IDS] = show }
+    }
 
-            context.dataStore.edit { prefs ->
-                prefs[Keys.CUSTOM_MODEL_PATH] = targetFile.absolutePath
-                prefs[Keys.MODEL_PROFILE] = ModelProfile.CUSTOM_EXTERNAL_TFLITE.id
-            }
+    suspend fun updateShowDebugMask(show: Boolean) {
+        context.dataStore.edit { it[Keys.SHOW_DEBUG_MASK] = show }
+    }
 
-            Result.success(targetFile.absolutePath)
-        } catch (e: Exception) {
-            Result.failure(e)
+    suspend fun setOnboardingCompleted() {
+        context.dataStore.edit { it[Keys.ONBOARDING_DONE] = true }
+    }
+
+    suspend fun updateRoiAndLines(roi: NormalizedRect, lineA: Float, lineB: Float) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.ROI_LEFT] = roi.left.coerceIn(0.04f, 0.75f)
+            prefs[Keys.ROI_TOP] = roi.top.coerceIn(0.04f, 0.75f)
+            prefs[Keys.ROI_RIGHT] = roi.right.coerceIn(0.20f, 0.96f)
+            prefs[Keys.ROI_BOTTOM] = roi.bottom.coerceIn(0.20f, 0.96f)
+            prefs[Keys.LINE_A_POS] = lineA.coerceIn(0.10f, 0.90f)
+            prefs[Keys.LINE_B_POS] = lineB.coerceIn(0.15f, 0.92f)
         }
     }
 }

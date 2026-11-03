@@ -1,4 +1,13 @@
 <resources>
     <string name="app_name">ONTIK Count AI</string>
-    <string name="tagline">On-Device AI Object &amp; Small Grain Counter</string>
+    <string name="tagline">High-Precision Offline OpenCV Grain &amp; Seed Counter</string>
+    <string name="status_calibrating">CALIBRATING</string>
+    <string name="status_ready">READY</string>
+    <string name="status_counting">COUNTING</string>
+    <string name="status_paused">PAUSED</string>
+    <string name="btn_auto_calibrate">Auto Calibrate</string>
+    <string name="btn_start">Start</string>
+    <string name="btn_pause">Pause</string>
+    <string name="btn_reset">Reset</string>
+    <string name="btn_save">Save</string>
 </resources>

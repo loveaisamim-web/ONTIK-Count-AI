@@ -6,8 +6,16 @@ import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +39,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -39,14 +48,17 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -63,35 +75,33 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.ontik.countai.domain.model.AccuracyConfidenceLevel
 import com.ontik.countai.domain.model.AppLanguage
 import com.ontik.countai.ui.components.CameraPreviewWithZoneOverlay
 import com.ontik.countai.ui.theme.AppStrings
-import com.ontik.countai.ui.theme.CardBorderGray
+import com.ontik.countai.ui.theme.DangerRed
+import com.ontik.countai.ui.theme.OntikAmberAccent
+import com.ontik.countai.ui.theme.OntikAmberDark
+import com.ontik.countai.ui.theme.OntikGreenBright
 import com.ontik.countai.ui.theme.OntikGreenDark
-import com.ontik.countai.ui.theme.OntikGreenLight
 import com.ontik.countai.ui.theme.OntikGreenPrimary
 import com.ontik.countai.ui.theme.OntikIcons
-import com.ontik.countai.ui.theme.SoftGraySurface
-import com.ontik.countai.ui.theme.TextPrimaryDark
-import com.ontik.countai.ui.theme.TextSecondarySlate
-import com.ontik.countai.ui.theme.WarningAmber
-import com.ontik.countai.ui.theme.WarningAmberBg
-import com.ontik.countai.ui.theme.WhiteBackground
 import com.ontik.countai.ui.viewmodel.CountViewModel
-import com.ontik.countai.ui.viewmodel.LiveCountingState
+import com.ontik.countai.ui.viewmodel.EngineStatus
 
 @Composable
 fun LiveCountingScreen(
     viewModel: CountViewModel,
-    onNavigateToPhoto: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val view = LocalView.current
-    val liveState by viewModel.liveState.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val lang = settings.language
+
+    var showResetConfirmDialog by remember { mutableStateOf(false) }
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -114,433 +124,689 @@ fun LiveCountingScreen(
         }
     }
 
-    LaunchedEffect(liveState.lastCountPulseTimestamp) {
-        if (liveState.lastCountPulseTimestamp > 0L && settings.hapticFeedbackEnabled) {
+    // Haptic tick on every count + stronger vibration on every 100 milestone
+    LaunchedEffect(uiState.lastCountPulseTimestampMs) {
+        if (uiState.lastCountPulseTimestampMs > 0L && settings.hapticEnabled) {
             view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
         }
     }
 
-    val countScale by animateFloatAsState(
-        targetValue = if (System.currentTimeMillis() - liveState.lastCountPulseTimestamp < 180L) 1.08f else 1.0f,
-        animationSpec = tween(durationMillis = 150),
-        label = "countScale"
+    LaunchedEffect(uiState.lastMilestoneHundredTimestampMs) {
+        if (uiState.lastMilestoneHundredTimestampMs > 0L && settings.hapticEnabled) {
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
+    }
+
+    val countBounceScale by animateFloatAsState(
+        targetValue = if (android.os.SystemClock.elapsedRealtime() - uiState.lastCountPulseTimestampMs < 160L) 1.08f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "countBounceScale"
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(WhiteBackground)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        // Top Header Bar with Quick Language Toggle, Photo, History & Settings
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "ONTIK Count AI",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = TextPrimaryDark
-                    )
-                    StatusBadge(countingState = liveState.countingState, lang = lang)
-                }
-                Text(
-                    text = "${settings.countingDirection.title(lang)} • Sens ${(settings.confidenceThreshold * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondarySlate,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 1. Edge-to-Edge Full-Screen Camera Preview + OpenCV ROI & Tracking Overlay
+        if (hasCameraPermission) {
+            CameraPreviewWithZoneOverlay(
+                modifier = Modifier.fillMaxSize(),
+                useBackCamera = settings.useBackCamera,
+                targetFps = settings.targetFps,
+                lockCameraExposureFocus = uiState.cameraLockedAfterCalibration,
+                torchEnabled = uiState.torchEnabled,
+                roiRect = settings.roiRect,
+                lineAPosition = settings.lineAPosition,
+                enableVerificationLineB = settings.enableVerificationLineB,
+                lineBPosition = settings.lineBPosition,
+                countingDirection = settings.countingDirection,
+                trackedGrains = uiState.trackedGrains,
+                showTrackIds = settings.showTrackIds,
+                showDebugMask = settings.showDebugMask,
+                debugMaskBitmap = uiState.debugMaskBitmap,
+                onFrameAvailable = viewModel::processCameraFrame,
+                onRoiAndLinesUpdated = viewModel::updateRoiAndLines
+            )
+        } else {
+            // Friendly Camera Permission Explanation Screen
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                OutlinedButton(
-                    onClick = {
-                        val nextLang = if (lang == AppLanguage.BANGLA) AppLanguage.ENGLISH else AppLanguage.BANGLA
-                        viewModel.updateLanguage(nextLang)
+                Text(
+                    text = if (lang == AppLanguage.BANGLA) "ক্যামেরা পারমিশন প্রয়োজন" else "Camera Access Needed",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = if (lang == AppLanguage.BANGLA) {
+                        "ONTIK Count AI সম্পূর্ণ অফলাইনে ওপেনসিভি (OpenCV) প্রযুক্তির মাধ্যমে ক্যামেরার সামনে থাকা চাল, ডাল, বীজ বা ট্যাবলেট গণনা করে। কোনো ছবি ইন্টারনেটে পাঠানো হয় না।"
+                    } else {
+                        "ONTIK Count AI processes frames 100% offline using OpenCV to count grains and seeds passing through the camera zone."
                     },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                    modifier = Modifier.height(32.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, OntikGreenPrimary)
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(22.dp))
+                Button(
+                    onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary),
+                    modifier = Modifier.height(52.dp)
                 ) {
                     Text(
-                        text = if (lang == AppLanguage.BANGLA) "EN" else "বাং",
-                        color = OntikGreenPrimary,
-                        fontSize = 12.sp,
+                        text = if (lang == AppLanguage.BANGLA) "ক্যামেরা পারমিশন দিন" else "Grant Camera Permission",
                         fontWeight = FontWeight.Bold
                     )
                 }
+            }
+        }
 
-                IconButton(onClick = onNavigateToPhoto) {
-                    Icon(
-                        imageVector = OntikIcons.Camera,
-                        contentDescription = "Photo Counting Mode",
-                        tint = OntikGreenPrimary
-                    )
+        // 2. Top Translucent Glass Bar: App Name, Status Chip, FPS Badge, Confidence Badge, Torch, History, Settings
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xCC0F172A),
+                shape = RoundedCornerShape(22.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f))
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = "ONTIK Count AI",
+                                color = Color.White,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp,
+                                maxLines = 1
+                            )
+                            StatusChipWithDot(status = uiState.status, lang = lang)
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            // Language Quick Pill
+                            TextButton(
+                                onClick = {
+                                    val next = if (lang == AppLanguage.BANGLA) AppLanguage.ENGLISH else AppLanguage.BANGLA
+                                    viewModel.updateLanguage(next)
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Text(
+                                    text = if (lang == AppLanguage.BANGLA) "EN" else "বাং",
+                                    color = OntikAmberAccent,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            IconButton(
+                                onClick = viewModel::toggleTorch,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (uiState.torchEnabled) OntikIcons.FlashOn else OntikIcons.FlashOff,
+                                    contentDescription = "Torch Toggle",
+                                    tint = if (uiState.torchEnabled) OntikAmberAccent else Color.White
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { viewModel.updateShowDebugMask(!settings.showDebugMask) },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = OntikIcons.BugMask,
+                                    contentDescription = "Debug Binary Mask Toggle",
+                                    tint = if (settings.showDebugMask) OntikGreenBright else Color.White.copy(alpha = 0.75f)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = onNavigateToHistory,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = OntikIcons.History,
+                                    contentDescription = "History",
+                                    tint = Color.White
+                                )
+                            }
+
+                            IconButton(
+                                onClick = onNavigateToSettings,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Settings",
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Telemetry Sub-Row: FPS Badge, Confidence Badge, Active Preset, 100-Grain Test Mode Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // FPS Badge
+                            val fpsColor = if (uiState.lowFpsWarning) DangerRed else OntikGreenBright
+                            BadgePill(
+                                text = "${uiState.currentFps} FPS",
+                                textColor = fpsColor,
+                                bgColor = fpsColor.copy(alpha = 0.16f)
+                            )
+
+                            // Running Accuracy Confidence Badge (Good / Fair / Poor)
+                            val confColor = when (uiState.confidenceBadge) {
+                                AccuracyConfidenceLevel.GOOD -> OntikGreenBright
+                                AccuracyConfidenceLevel.FAIR -> OntikAmberAccent
+                                AccuracyConfidenceLevel.POOR -> DangerRed
+                            }
+                            BadgePill(
+                                text = uiState.confidenceBadge.label(lang),
+                                textColor = confColor,
+                                bgColor = confColor.copy(alpha = 0.16f)
+                            )
+
+                            // Preset Badge
+                            BadgePill(
+                                text = settings.activePreset.nameEn.substringBefore(" "),
+                                textColor = Color.White.copy(alpha = 0.9f),
+                                bgColor = Color.White.copy(alpha = 0.12f)
+                            )
+                        }
+
+                        // 100-Grain Test Mode Pill Button
+                        Surface(
+                            onClick = viewModel::toggleTestMode100,
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (uiState.isTestMode100Active) OntikAmberAccent else Color.White.copy(alpha = 0.12f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = OntikIcons.ScienceTest,
+                                    contentDescription = "100-Grain Test Mode",
+                                    tint = if (uiState.isTestMode100Active) Color.Black else Color.White,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = if (lang == AppLanguage.BANGLA) "১০০ টেস্ট" else "100 Test",
+                                    color = if (uiState.isTestMode100Active) Color.Black else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    // Calibration Progress Bar when calibrating
+                    if (uiState.status == EngineStatus.CALIBRATING) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LinearProgressIndicator(
+                            progress = { uiState.calibrationProgress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(5.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = OntikAmberAccent,
+                            trackColor = Color.White.copy(alpha = 0.2f)
+                        )
+                    }
                 }
-                IconButton(onClick = onNavigateToHistory) {
-                    Icon(
-                        imageVector = OntikIcons.History,
-                        contentDescription = "Counting History",
-                        tint = TextPrimaryDark
-                    )
+            }
+
+            // Contextual Hint Snackbar ("Surface not empty", "Too dark", "Low FPS", "Verification Line B Mismatch")
+            val activeHint = if (lang == AppLanguage.BANGLA) uiState.contextualHintBn else uiState.contextualHintEn
+            val mismatchHint = if (uiState.verificationMismatchWarning) {
+                if (lang == AppLanguage.BANGLA) {
+                    "সতর্কতা: লাইন A (${uiState.autoCountLineA}) ও ভেরিফিকেশন লাইন B (${uiState.autoCountLineB}) এর সংখ্যায় পার্থক্য পাওয়া গেছে"
+                } else {
+                    "Verification Mismatch: Line A (${uiState.autoCountLineA}) vs Line B (${uiState.autoCountLineB})"
                 }
-                IconButton(onClick = onNavigateToSettings) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Settings & Model",
-                        tint = TextPrimaryDark
+            } else null
+
+            val bannerText = mismatchHint ?: activeHint
+            AnimatedVisibility(visible = bannerText != null, enter = fadeIn(), exit = fadeOut()) {
+                Surface(
+                    color = Color(0xD91E293B),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, OntikAmberAccent.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = bannerText ?: "",
+                        color = OntikAmberAccent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                     )
                 }
             }
         }
 
-        // Camera Preview with Zone Overlay
-        Card(
+        // 3. Bottom Glassmorphism Sheet Card: Giant 72sp Animated TOTAL COUNT, Rate/sec, -/+ & Undo, and Primary Action Row
+        Column(
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .weight(1f),
-            shape = RoundedCornerShape(18.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            border = BorderStroke(1.dp, CardBorderGray)
+                .navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (hasCameraPermission) {
-                    CameraPreviewWithZoneOverlay(
-                        modifier = Modifier.fillMaxSize(),
-                        useBackCamera = settings.useBackCamera,
-                        torchEnabled = liveState.torchEnabled,
-                        countingZone = settings.countingZone,
-                        countingLinePosition = settings.countingLinePosition,
-                        countingDirection = settings.countingDirection,
-                        isAdjustingZone = liveState.isAdjustingZone,
-                        trackedObjects = liveState.trackedObjects,
-                        onFrameAvailable = viewModel::processCameraFrame,
-                        onZoneAndLineUpdated = viewModel::updateZoneAndLine
-                    )
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(SoftGraySurface)
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xD90F172A),
+                shape = RoundedCornerShape(26.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = AppStrings.cameraPermissionTitle(lang),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = TextPrimaryDark
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = AppStrings.cameraPermissionDesc(lang),
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-                            colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = AppStrings.totalCountHeader(lang, uiState.isTestMode100Active),
+                                color = if (uiState.isTestMode100Active) OntikAmberAccent else OntikGreenBright,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            // Giant 72sp Animated Rolling Count
+                            AnimatedContent(
+                                targetState = uiState.totalCount,
+                                transitionSpec = {
+                                    (slideInVertically { h -> h / 2 } + fadeIn()).togetherWith(
+                                        slideOutVertically { h -> -h / 2 } + fadeOut()
+                                    )
+                                },
+                                label = "giantCountRoll"
+                            ) { targetCount ->
+                                Text(
+                                    text = "$targetCount",
+                                    fontSize = 68.sp,
+                                    lineHeight = 72.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color.White,
+                                    modifier = Modifier.scale(countBounceScale)
+                                )
+                            }
+
+                            Text(
+                                text = AppStrings.subStatsLine(
+                                    lang = lang,
+                                    inZone = uiState.inZoneGrainCount,
+                                    ratePerSec = uiState.countRatePerSec
+                                ),
+                                color = Color.White.copy(alpha = 0.78f),
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        // Manual Correction Buttons: Undo, -1, +1
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(AppStrings.grantPermissionBtn(lang))
+                            FilledIconButton(
+                                onClick = viewModel::undoLastCount,
+                                shape = CircleShape,
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color.White.copy(alpha = 0.14f),
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(OntikIcons.Undo, contentDescription = "Undo Last Count")
+                            }
+
+                            FilledIconButton(
+                                onClick = { viewModel.adjustCountManually(-1) },
+                                shape = CircleShape,
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color.White.copy(alpha = 0.14f),
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(OntikIcons.Minus, contentDescription = "Minus 1")
+                            }
+
+                            FilledIconButton(
+                                onClick = { viewModel.adjustCountManually(1) },
+                                shape = CircleShape,
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = OntikGreenPrimary,
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Plus 1")
+                            }
+                        }
+                    }
+
+                    // Primary Action Row: Start/Pause, Auto Calibrate, Reset (with Confirm Dialog), Save (Bookmark)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val isCounting = uiState.status == EngineStatus.COUNTING
+                        Button(
+                            onClick = viewModel::toggleStartPause,
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .height(50.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isCounting) OntikAmberDark else OntikGreenPrimary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = if (isCounting) OntikIcons.Pause else Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isCounting) AppStrings.btnPause(lang) else AppStrings.btnStart(lang),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = viewModel::triggerAutoCalibrate,
+                            modifier = Modifier
+                                .weight(1.15f)
+                                .height(50.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, OntikAmberAccent)
+                        ) {
+                            Icon(
+                                imageVector = OntikIcons.CalibrateTarget,
+                                contentDescription = null,
+                                tint = OntikAmberAccent,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = AppStrings.btnAutoCalibrate(lang),
+                                color = OntikAmberAccent,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        FilledIconButton(
+                            onClick = {
+                                if (uiState.totalCount > 0) {
+                                    showResetConfirmDialog = true
+                                } else {
+                                    viewModel.resetCount()
+                                }
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = Color.White.copy(alpha = 0.14f),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier.size(50.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = AppStrings.btnReset(lang))
+                        }
+
+                        FilledIconButton(
+                            onClick = {
+                                val saved = viewModel.saveSessionToHistory()
+                                if (saved != null) {
+                                    val msg = if (uiState.isTestMode100Active) {
+                                        if (lang == AppLanguage.BANGLA) {
+                                            "টেস্ট সেভ হয়েছে! গণনা: ${saved.finalCount}/100 (ত্রুটি: ${saved.accuracyErrorPercent}%)"
+                                        } else {
+                                            "100-Grain Test Saved! Counted: ${saved.finalCount}/100 (Error: ${saved.accuracyErrorPercent}%)"
+                                        }
+                                    } else {
+                                        if (lang == AppLanguage.BANGLA) {
+                                            "ইতিহাসে সেভ হয়েছে (মোট: ${saved.finalCount})"
+                                        } else {
+                                            "Saved to History (Total: ${saved.finalCount})"
+                                        }
+                                    }
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = OntikGreenPrimary,
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier.size(50.dp)
+                        ) {
+                            Icon(OntikIcons.BookmarkCheck, contentDescription = AppStrings.btnSave(lang))
                         }
                     }
                 }
-
-                // Floating Camera Controls
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilledIconButton(
-                        onClick = viewModel::toggleZoneAdjustmentMode,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = if (liveState.isAdjustingZone) OntikGreenPrimary else Color.Black.copy(alpha = 0.55f),
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Icon(
-                            imageVector = OntikIcons.Crop,
-                            contentDescription = "Adjust Counting Zone & Line"
-                        )
-                    }
-
-                    FilledIconButton(
-                        onClick = viewModel::toggleTorch,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = if (liveState.torchEnabled) OntikGreenPrimary else Color.Black.copy(alpha = 0.55f),
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Icon(
-                            imageVector = if (liveState.torchEnabled) OntikIcons.FlashOn else OntikIcons.FlashOff,
-                            contentDescription = "Toggle Camera Flash"
-                        )
-                    }
-                }
-
-                // Telemetry Badge
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(10.dp),
-                    color = Color.Black.copy(alpha = 0.65f),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text(
-                        text = if (liveState.isAdjustingZone) {
-                            AppStrings.dragZoneHint(lang)
-                        } else {
-                            AppStrings.liveTelemetry(lang, liveState.currentlyDetectedInZone, liveState.inferenceTimeMs)
-                        },
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                    )
-                }
             }
         }
 
-        // Total Count Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = SoftGraySurface),
-            border = BorderStroke(1.dp, CardBorderGray)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = AppStrings.totalCountLabel(lang),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = OntikGreenDark
-                    )
-                    Text(
-                        text = "${liveState.totalCount}",
-                        style = MaterialTheme.typography.displayLarge,
-                        color = TextPrimaryDark,
-                        modifier = Modifier.scale(countScale)
-                    )
-                    Text(
-                        text = AppStrings.inZoneSummary(lang, liveState.currentlyDetectedInZone, liveState.manualDelta),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondarySlate
-                    )
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilledIconButton(
-                        onClick = { viewModel.adjustLiveCountManually(-1) },
-                        shape = CircleShape,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = WhiteBackground,
-                            contentColor = TextPrimaryDark
-                        ),
-                        modifier = Modifier.size(42.dp)
-                    ) {
-                        Icon(OntikIcons.Minus, contentDescription = "Decrease Count by 1", tint = TextPrimaryDark)
-                    }
-
-                    FilledIconButton(
-                        onClick = { viewModel.adjustLiveCountManually(1) },
-                        shape = CircleShape,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = OntikGreenLight,
-                            contentColor = OntikGreenDark
-                        ),
-                        modifier = Modifier.size(42.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Increase Count by 1")
-                    }
-
-                    FilledIconButton(
+        // 4. Reset Confirmation Dialog
+        if (showResetConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showResetConfirmDialog = false },
+                title = { Text(AppStrings.resetDialogTitle(lang), fontWeight = FontWeight.Bold) },
+                text = { Text(AppStrings.resetDialogBody(lang, uiState.totalCount)) },
+                confirmButton = {
+                    Button(
                         onClick = {
-                            val savedTotal = viewModel.saveCurrentLiveSession()
-                            if (savedTotal > 0) {
-                                Toast.makeText(
-                                    context,
-                                    AppStrings.sessionSavedToast(lang, savedTotal),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
+                            viewModel.resetCount()
+                            showResetConfirmDialog = false
                         },
-                        shape = CircleShape,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = OntikGreenPrimary,
-                            contentColor = WhiteBackground
-                        ),
-                        modifier = Modifier.size(42.dp)
+                        colors = ButtonDefaults.buttonColors(containerColor = DangerRed)
                     ) {
-                        Icon(OntikIcons.BookmarkCheck, contentDescription = "Save Session to History")
+                        Text(AppStrings.confirmYes(lang))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showResetConfirmDialog = false }) {
+                        Text(AppStrings.confirmCancel(lang))
                     }
                 }
-            }
+            )
         }
 
-        // Clean Single-Line Primary Action Controls (Protected from System Navigation Bar overlap)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            when (liveState.countingState) {
-                LiveCountingState.IDLE -> {
-                    Button(
-                        onClick = viewModel::startLiveCounting,
-                        modifier = Modifier
-                            .weight(1.25f)
-                            .height(48.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = AppStrings.startCounting(lang),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+        // 5. First-Launch 3-Slide Onboarding Overlay
+        if (!settings.onboardingCompleted) {
+            OnboardingOverlayDialog(
+                lang = lang,
+                onFinish = {
+                    viewModel.completeOnboarding()
+                    viewModel.triggerAutoCalibrate()
                 }
-                LiveCountingState.RUNNING -> {
-                    Button(
-                        onClick = viewModel::pauseLiveCounting,
-                        modifier = Modifier
-                            .weight(1.25f)
-                            .height(48.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = OntikGreenDark)
-                    ) {
-                        Icon(OntikIcons.Pause, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = AppStrings.pauseCounting(lang),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                LiveCountingState.PAUSED -> {
-                    Button(
-                        onClick = viewModel::resumeLiveCounting,
-                        modifier = Modifier
-                            .weight(1.25f)
-                            .height(48.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = AppStrings.resumeCounting(lang),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-
-            OutlinedButton(
-                onClick = viewModel::resetLiveCounting,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, CardBorderGray)
-            ) {
-                Icon(Icons.Default.Refresh, contentDescription = null, tint = TextPrimaryDark, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = AppStrings.resetCounting(lang),
-                    color = TextPrimaryDark,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            OutlinedButton(
-                onClick = onNavigateToPhoto,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, OntikGreenPrimary)
-            ) {
-                Icon(OntikIcons.Camera, contentDescription = null, tint = OntikGreenPrimary, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = AppStrings.photoModeBtn(lang),
-                    color = OntikGreenPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            )
         }
     }
 }
 
 @Composable
-private fun StatusBadge(countingState: LiveCountingState, lang: AppLanguage) {
-    val (bg, fg, label) = when (countingState) {
-        LiveCountingState.IDLE -> Triple(SoftGraySurface, TextSecondarySlate, AppStrings.statusReady(lang))
-        LiveCountingState.RUNNING -> Triple(OntikGreenLight, OntikGreenDark, AppStrings.statusLive(lang))
-        LiveCountingState.PAUSED -> Triple(WarningAmberBg, WarningAmber, AppStrings.statusPaused(lang))
+private fun StatusChipWithDot(status: EngineStatus, lang: AppLanguage) {
+    val (dotColor, label) = when (status) {
+        EngineStatus.CALIBRATING -> OntikAmberAccent to AppStrings.statusCalibrating(lang)
+        EngineStatus.READY -> Color(0xFF38BDF8) to AppStrings.statusReady(lang)
+        EngineStatus.COUNTING -> OntikGreenBright to AppStrings.statusCounting(lang)
+        EngineStatus.PAUSED -> OntikAmberDark to AppStrings.statusPaused(lang)
     }
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(bg)
-            .padding(horizontal = 8.dp, vertical = 3.dp)
+    Surface(
+        color = dotColor.copy(alpha = 0.18f),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(dotColor)
+            )
+            Text(
+                text = label,
+                color = dotColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun BadgePill(text: String, textColor: Color, bgColor: Color) {
+    Surface(
+        color = bgColor,
+        shape = RoundedCornerShape(8.dp)
     ) {
         Text(
-            text = label,
-            color = fg,
+            text = text,
+            color = textColor,
             fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
         )
+    }
+}
+
+@Composable
+private fun OnboardingOverlayDialog(
+    lang: AppLanguage,
+    onFinish: () -> Unit
+) {
+    var slideIndex by remember { mutableIntStateOf(0) }
+
+    val titles = listOf(
+        AppStrings.onboardingSlide1Title(lang),
+        AppStrings.onboardingSlide2Title(lang),
+        AppStrings.onboardingSlide3Title(lang)
+    )
+    val bodies = listOf(
+        AppStrings.onboardingSlide1Body(lang),
+        AppStrings.onboardingSlide2Body(lang),
+        AppStrings.onboardingSlide3Body(lang)
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.72f))
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = if (lang == AppLanguage.BANGLA) "কীভাবে ব্যবহার করবেন (${slideIndex + 1}/3)" else "Quick Guide (${slideIndex + 1}/3)",
+                    color = OntikGreenPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = titles[slideIndex],
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = bodies[slideIndex],
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onFinish) {
+                        Text(if (lang == AppLanguage.BANGLA) "স্কিপ করুন" else "Skip")
+                    }
+
+                    Button(
+                        onClick = {
+                            if (slideIndex < 2) {
+                                slideIndex++
+                            } else {
+                                onFinish()
+                            }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
+                    ) {
+                        Text(
+                            text = if (slideIndex < 2) {
+                                if (lang == AppLanguage.BANGLA) "পরবর্তী" else "Next"
+                            } else {
+                                if (lang == AppLanguage.BANGLA) "শুরু করুন" else "Start Now"
+                            },
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
     }
 }

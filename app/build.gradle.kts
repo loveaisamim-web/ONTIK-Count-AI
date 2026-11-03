@@ -12,8 +12,8 @@ android {
         applicationId = "com.ontik.countai"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -54,13 +54,12 @@ android {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
 
-    androidResources {
-        noCompress += listOf("tflite", "lite")
-    }
-
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            pickFirsts += listOf("**/libc++_shared.so", "**/libopencv_java4.so")
         }
     }
 }
@@ -85,32 +84,33 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    // CameraX (Real-time camera preview, ImageAnalysis, ImageCapture, Torch)
+    // CameraX (1280x720 ImageAnalysis + Camera2Interop for AE/AWB/AF lock & fast shutter)
     val cameraxVersion = "1.3.4"
     implementation("androidx.camera:camera-core:$cameraxVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
 
-    // TensorFlow Lite On-Device AI Inference
-    implementation("org.tensorflow:tensorflow-lite:2.16.1")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.16.1")
+    // Official OpenCV Android SDK (Classical Computer Vision: Grayscale + Lab, CLAHE, Morphology, Contours, Moments, Watershed)
+    implementation("org.opencv:opencv:4.9.0")
 
-    // Room Database (Offline Session Persistence)
+    // Room Database (Session History, Test Mode Accuracy Records)
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // DataStore Preferences (Persistent Settings)
+    // DataStore Preferences (Presets, Calibration, Sensitivity, Language, Theme)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // Coroutines & ExifInterface
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
-    // Debug & Testing
+    // Unit Testing (Synthetic tests for Kalman, Hungarian, Line Crossing, Area Split)
+    testImplementation("junit:junit:4.13.2")
+
+    // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

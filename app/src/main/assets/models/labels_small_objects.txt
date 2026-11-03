@@ -1,9 +1,0 @@
-seed
-grain
-bean
-kernel
-lentil
-pellet
-pill
-bead
-small_object

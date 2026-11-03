@@ -4,14 +4,12 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
 import com.ontik.countai.data.local.CountSessionEntity
+import com.ontik.countai.domain.model.DebugFrameSnapshot
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Generates and shares CSV and TXT reports of counting history sessions for offline archiving or spreadsheet analysis.
- */
 object SessionExportHelper {
 
     private val dateFormatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
@@ -28,22 +26,23 @@ object SessionExportHelper {
         val file = File(exportDir, "ONTIK_Count_AI_History_${fileStampFormatter.format(Date())}.csv")
 
         val sb = StringBuilder()
-        sb.appendLine("Session ID,Timestamp,Mode,Final Count,AI Detected Count,Manual Adjustment,Direction,Confidence Threshold,Duration (sec),Model Used,Notes")
+        sb.appendLine("Session ID,Timestamp,Label,Preset,Final Count,Auto Count,Manual Adjustment,Direction,Duration (sec),100-Grain Test Mode,Error %,Notes")
 
-        for (session in sessions) {
-            val formattedDate = dateFormatter.format(Date(session.timestampMs))
+        for (s in sessions) {
+            val formattedDate = dateFormatter.format(Date(s.timestampMs))
             val row = listOf(
-                session.id.toString(),
+                s.id.toString(),
                 csvCell(formattedDate),
-                csvCell(session.mode),
-                session.finalCount.toString(),
-                session.aiDetectedCount.toString(),
-                session.manualDelta.toString(),
-                csvCell(session.direction),
-                session.confidenceThreshold.toString(),
-                session.durationSeconds.toString(),
-                csvCell(session.modelName),
-                csvCell(session.notes)
+                csvCell(s.label),
+                csvCell(s.presetName),
+                s.finalCount.toString(),
+                s.autoCount.toString(),
+                s.manualDelta.toString(),
+                csvCell(s.direction),
+                s.durationSeconds.toString(),
+                if (s.isTestModeSession) "YES" else "NO",
+                if (s.isTestModeSession) String.format(Locale.US, "%.1f%%", s.accuracyErrorPercent) else "N/A",
+                csvCell(s.notes)
             ).joinToString(",")
             sb.appendLine(row)
         }
@@ -52,38 +51,14 @@ object SessionExportHelper {
         return file
     }
 
-    fun exportToTxt(context: Context, sessions: List<CountSessionEntity>): File {
+    fun exportDebugLog(context: Context, snapshots: List<DebugFrameSnapshot>): File {
         val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-        val file = File(exportDir, "ONTIK_Count_AI_Report_${fileStampFormatter.format(Date())}.txt")
-
+        val file = File(exportDir, "ONTIK_Debug_10s_Log_${fileStampFormatter.format(Date())}.csv")
         val sb = StringBuilder()
-        sb.appendLine("====================================================")
-        sb.appendLine("            ONTIK Count AI - Session Report         ")
-        sb.appendLine("====================================================")
-        sb.appendLine("Generated: ${dateFormatter.format(Date())}")
-        sb.appendLine("Total Sessions Recorded: ${sessions.size}")
-        sb.appendLine("Cumulative Objects Counted: ${sessions.sumOf { it.finalCount }}")
-        sb.appendLine("----------------------------------------------------")
-        sb.appendLine()
-
-        sessions.forEachIndexed { index, s ->
-            val manualStr = if (s.manualDelta >= 0) "+${s.manualDelta}" else s.manualDelta.toString()
-            sb.appendLine("Session #${index + 1} (ID: ${s.id})")
-            sb.appendLine("  Date & Time       : ${dateFormatter.format(Date(s.timestampMs))}")
-            sb.appendLine("  Counting Mode     : ${s.mode}")
-            sb.appendLine("  Total Final Count : ${s.finalCount}")
-            sb.appendLine("  AI Raw Count      : ${s.aiDetectedCount}")
-            sb.appendLine("  Manual Adjustment : $manualStr")
-            sb.appendLine("  Direction         : ${s.direction}")
-            sb.appendLine("  Confidence Config : ${(s.confidenceThreshold * 100).toInt()}%")
-            sb.appendLine("  Duration          : ${s.durationSeconds}s")
-            sb.appendLine("  AI Model          : ${s.modelName}")
-            if (s.notes.isNotBlank()) {
-                sb.appendLine("  Notes             : ${s.notes}")
-            }
-            sb.appendLine("----------------------------------------------------")
+        sb.appendLine("ElapsedMs,TotalCount,InZoneCount,FPS,NoiseStd,SingleGrainAreaPx")
+        for (snap in snapshots) {
+            sb.appendLine("${snap.timestampMs},${snap.totalCount},${snap.inZoneCount},${snap.fps},${String.format(Locale.US, "%.2f", snap.noiseStd)},${String.format(Locale.US, "%.1f", snap.singleGrainAreaPx)}")
         }
-
         file.writeText(sb.toString(), Charsets.UTF_8)
         return file
     }
@@ -100,7 +75,7 @@ object SessionExportHelper {
             putExtra(Intent.EXTRA_SUBJECT, "ONTIK Count AI Export - ${file.name}")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        val chooser = Intent.createChooser(shareIntent, "Export ONTIK Count AI History").apply {
+        val chooser = Intent.createChooser(shareIntent, "Share ONTIK Count AI Export").apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(chooser)

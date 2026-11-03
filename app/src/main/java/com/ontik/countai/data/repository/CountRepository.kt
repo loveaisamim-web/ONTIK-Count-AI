@@ -12,6 +12,10 @@ class CountRepository(private val dao: CountSessionDao) {
         return dao.insertSession(session)
     }
 
+    suspend fun updateSession(session: CountSessionEntity) {
+        dao.updateSession(session)
+    }
+
     suspend fun deleteSession(session: CountSessionEntity) {
         dao.deleteSession(session)
     }

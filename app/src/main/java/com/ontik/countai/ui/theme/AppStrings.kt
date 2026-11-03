@@ -3,214 +3,83 @@ package com.ontik.countai.ui.theme
 import com.ontik.countai.domain.model.AppLanguage
 
 object AppStrings {
-    fun statusReady(lang: AppLanguage) = if (lang == AppLanguage.BANGLA) "প্রস্তুত" else "READY"
-    fun statusLive(lang: AppLanguage) = if (lang == AppLanguage.BANGLA) "চলছে" else "LIVE"
-    fun statusPaused(lang: AppLanguage) = if (lang == AppLanguage.BANGLA) "বিরতি" else "PAUSED"
+    fun statusCalibrating(lang: AppLanguage) =
+        if (lang == AppLanguage.BANGLA) "ক্যালিব্রেট হচ্ছে" else "CALIBRATING"
 
-    fun totalCountLabel(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "মোট গণনা (TOTAL COUNT)" else "TOTAL COUNT"
+    fun statusReady(lang: AppLanguage) =
+        if (lang == AppLanguage.BANGLA) "প্রস্তুত" else "READY"
 
-    fun inZoneSummary(lang: AppLanguage, inZone: Int, manualDelta: Int): String {
-        val adj = if (manualDelta >= 0) "+$manualDelta" else "$manualDelta"
-        return if (lang == AppLanguage.BANGLA) {
-            "বক্সের ভেতর: $inZone টি  |  ম্যানুয়াল: $adj"
+    fun statusCounting(lang: AppLanguage) =
+        if (lang == AppLanguage.BANGLA) "গণনা চলছে" else "COUNTING"
+
+    fun statusPaused(lang: AppLanguage) =
+        if (lang == AppLanguage.BANGLA) "বিরতি" else "PAUSED"
+
+    fun totalCountHeader(lang: AppLanguage, isTestMode: Boolean): String {
+        return if (isTestMode) {
+            if (lang == AppLanguage.BANGLA) "১০০ দানা টেস্ট মোড (TEST MODE)" else "100-GRAIN TEST MODE"
         } else {
-            "In Zone: $inZone  |  Manual: $adj"
+            if (lang == AppLanguage.BANGLA) "মোট গণনা (TOTAL COUNT)" else "TOTAL COUNT"
         }
     }
 
-    fun startCounting(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "গণনা শুরু" else "Start"
-
-    fun pauseCounting(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "বিরতি" else "Pause"
-
-    fun resumeCounting(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "চালু করুন" else "Resume"
-
-    fun resetCounting(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "রিসেট" else "Reset"
-
-    fun photoModeBtn(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "ছবি গণনা" else "Photo"
-
-    fun dragZoneHint(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) {
-            "বক্সের কোণা বা মাঝের দাগ টেনে ছোট-বড় করুন"
+    fun subStatsLine(lang: AppLanguage, inZone: Int, ratePerSec: Float): String {
+        val r = String.format(java.util.Locale.US, "%.1f", ratePerSec)
+        return if (lang == AppLanguage.BANGLA) {
+            "বক্সে: $inZone টি  •  গতি: $r/সেকেন্ড"
         } else {
-            "Drag zone corners or dashed line to adjust"
+            "In zone: $inZone  •  Rate: $r/sec"
+        }
+    }
+
+    fun btnStart(lang: AppLanguage) = if (lang == AppLanguage.BANGLA) "শুরু" else "Start"
+    fun btnPause(lang: AppLanguage) = if (lang == AppLanguage.BANGLA) "বিরতি" else "Pause"
+    fun btnReset(lang: AppLanguage) = if (lang == AppLanguage.BANGLA) "রিসেট" else "Reset"
+    fun btnSave(lang: AppLanguage) = if (lang == AppLanguage.BANGLA) "সেভ" else "Save"
+    fun btnAutoCalibrate(lang: AppLanguage) =
+        if (lang == AppLanguage.BANGLA) "ক্যালিব্রেট" else "Calibrate"
+
+    fun resetDialogTitle(lang: AppLanguage) =
+        if (lang == AppLanguage.BANGLA) "গণনা রিসেট করবেন?" else "Reset Current Count?"
+
+    fun resetDialogBody(lang: AppLanguage, currentCount: Int) =
+        if (lang == AppLanguage.BANGLA) {
+            "বর্তমান গণনা ($currentCount) মুছে ০ হয়ে যাবে।"
+        } else {
+            "This will reset the current count ($currentCount) back to 0."
         }
 
-    fun liveTelemetry(lang: AppLanguage, inZone: Int, ms: Long) =
+    fun confirmYes(lang: AppLanguage) = if (lang == AppLanguage.BANGLA) "হ্যাঁ, রিসেট করুন" else "Reset"
+    fun confirmCancel(lang: AppLanguage) = if (lang == AppLanguage.BANGLA) "বাতিল" else "Cancel"
+
+    // Onboarding
+    fun onboardingSlide1Title(lang: AppLanguage) =
+        if (lang == AppLanguage.BANGLA) "১. ফোন স্থির ও সমান্তরাল রাখুন" else "1. Steady Camera Above Surface"
+
+    fun onboardingSlide1Body(lang: AppLanguage) =
         if (lang == AppLanguage.BANGLA) {
-            "শনাক্ত: $inZone টি • সময়: $ms ms"
+            "সাদা কাগজ বা সমান টেবিলের ওপর ফোনটি ১৫-২৫ সেমি উপরে স্থির করে ধরুন বা স্ট্যান্ডে রাখুন। ভালো আলোর জন্য ফ্ল্যাশলাইট (Torch) চালু করতে পারেন।"
         } else {
-            "Detected: $inZone • $ms ms"
+            "Hold or mount your phone 15-25 cm above a clean contrasting surface (such as white paper). Turn on the Torch for crisp, shadow-free lighting."
         }
 
-    fun sessionSavedToast(lang: AppLanguage, count: Int) =
+    fun onboardingSlide2Title(lang: AppLanguage) =
+        if (lang == AppLanguage.BANGLA) "২. খালি পৃষ্ঠে 'ক্যালিব্রেট' চাপুন" else "2. Tap 'Auto Calibrate' on Empty Surface"
+
+    fun onboardingSlide2Body(lang: AppLanguage) =
         if (lang == AppLanguage.BANGLA) {
-            "সেশন সেভ হয়েছে (মোট গণনা: $count)"
+            "কোনো শস্য বা বীজ দেওয়ার আগে খালি কাগজের ওপর 'ক্যালিব্রেট' বাটন চাপুন। ২ সেকেন্ডে অ্যাপটি ৩০টি ফ্রেম থেকে আলো ও ব্যাকগ্রাউন্ড শিখে নেবে এবং ক্যামেরা লক করবে।"
         } else {
-            "Session saved to History (Total: $count)"
+            "With the counting zone empty, tap 'Calibrate'. In 2 seconds (30 frames), the app models the background, normalizes uneven lighting, and locks exposure/focus."
         }
 
-    fun cameraPermissionTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "ক্যামেরা পারমিশন প্রয়োজন" else "Camera Permission Required"
+    fun onboardingSlide3Title(lang: AppLanguage) =
+        if (lang == AppLanguage.BANGLA) "৩. দানা ফেলুন ও নির্ভুল গণনা দেখুন" else "3. Drop Grains Across the Line"
 
-    fun cameraPermissionDesc(lang: AppLanguage) =
+    fun onboardingSlide3Body(lang: AppLanguage) =
         if (lang == AppLanguage.BANGLA) {
-            "ক্যামেরার সামনে বস্তু রেখে স্বয়ংক্রিয়ভাবে গণনা করার জন্য ক্যামেরা পারমিশন অ্যালাউ করুন।"
+            "এবার 'শুরু' চেপে মাঝের ড্যাশ দাগের ওপর দিয়ে চাল, ডাল, বীজ বা ট্যাবলেট পার করুন। একাধিক দানা লেগে থাকলেও অ্যাপ তা আলাদা করে গুনবে!"
         } else {
-            "ONTIK Count AI needs camera access to detect and count physical objects in real time."
+            "Tap 'Start' and pass grains across the dashed line. Touching grains are automatically split by area & watershed, and fast-falling grains are tracked via Kalman filter."
         }
-
-    fun grantPermissionBtn(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "ক্যামেরা চালু করুন" else "Grant Camera Permission"
-
-    // Photo Screen
-    fun photoScreenTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "ছবি থেকে বস্তু গণনা" else "Photo Counting"
-
-    fun photoScreenSubtitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) {
-            "ছবি তুলুন বা গ্যালারি থেকে নিন, এবং ট্যাপ করে সংখ্যা ঠিক করুন"
-        } else {
-            "Capture or pick a photo, inspect boxes & tap to adjust"
-        }
-
-    fun photoEmptyTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "ছবি তুলুন অথবা গ্যালারি থেকে সিলেক্ট করুন" else "Select or Capture a Photo"
-
-    fun photoEmptyDesc(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) {
-            "সাদা কাগজ বা টেবিলের ওপর বাদাম, বীজ বা শস্যদানা রেখে ছবি তুলুন। কোনো বস্তু বাদ পড়লে ছবির ওপর ট্যাপ করে যোগ করতে পারবেন।"
-        } else {
-            "Place seeds, grains, beans, or objects on a contrasting surface and capture or pick a photo. Tap any missed item to add it."
-        }
-
-    fun photoTotalLabel(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "ছবির মোট গণনা (PHOTO COUNT)" else "PHOTO TOTAL COUNT"
-
-    fun photoBreakdown(lang: AppLanguage, aiCount: Int, tapCount: Int) =
-        if (lang == AppLanguage.BANGLA) {
-            "অটো শনাক্ত: $aiCount টি  |  ট্যাপ মার্ক: +$tapCount"
-        } else {
-            "Auto Boxes: $aiCount  |  Tap Marks: +$tapCount"
-        }
-
-    fun capturePhotoBtn(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "ছবি তুলুন" else "Take Photo"
-
-    fun pickGalleryBtn(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "গ্যালারি" else "Gallery"
-
-    // History Screen
-    fun historyTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "গণনার ইতিহাস (History)" else "Counting History"
-
-    fun historySummary(lang: AppLanguage, sessions: Int, totalItems: Int) =
-        if (lang == AppLanguage.BANGLA) {
-            "মোট সেশন: $sessions টি • সর্বমোট বস্তু: $totalItems টি"
-        } else {
-            "$sessions saved sessions • Total objects: $totalItems"
-        }
-
-    fun exportCsvBtn(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "CSV এক্সপোর্ট" else "Export CSV"
-
-    fun exportTxtBtn(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "TXT রিপোর্ট" else "Export TXT"
-
-    fun emptyHistoryTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "এখনো কোনো সেশন সেভ করা হয়নি" else "No Saved Counting Sessions Yet"
-
-    fun emptyHistoryDesc(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) {
-            "লাইভ গণনা বা ছবি গণনা স্ক্রিনের সবুজ সেভ (বুকমার্ক) বাটনে ট্যাপ করলে এখানে বিস্তারিত জমা থাকবে।"
-        } else {
-            "Tap the green save button on the Live Counting or Photo Counting screen to save a session."
-        }
-
-    // Settings Screen
-    fun settingsTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "সেটিংস ও এআই কনফিগারেশন" else "Settings & AI Configuration"
-
-    fun settingsSubtitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) {
-            "ভাষা, ডিটেকশন সেন্সিটিভিটি, লাইন পারাপারের দিক ও মডেল পরিবর্তন করুন"
-        } else {
-            "Configure language, detection sensitivity, line direction & AI model"
-        }
-
-    fun languageSectionTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "অ্যাপের ভাষা (App Language)" else "App Language / অ্যাপের ভাষা"
-
-    fun modelSectionTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) {
-            "অবজেক্ট ডিটেকশন ইঞ্জিন ও AI মডেল"
-        } else {
-            "Object Detection Engine & AI Model"
-        }
-
-    fun importModelBtn(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) {
-            "ফোন মেমোরি থেকে .tflite মডেল ফাইল যোগ করুন"
-        } else {
-            "Import Custom .tflite Model from Phone Storage"
-        }
-
-    fun sensitivitySectionTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) {
-            "ডিটেকশন সেন্সিটিভিটি (Detection Sensitivity)"
-        } else {
-            "Detection Sensitivity & Overlap Control"
-        }
-
-    fun confidenceLabel(lang: AppLanguage, percent: Int) =
-        if (lang == AppLanguage.BANGLA) {
-            "ডিটেকশন থ্রেশহোল্ড (Sensitivity): $percent% (কম রাখলে ছোট বস্তু সহজে ধরবে)"
-        } else {
-            "Detection Threshold: $percent% (Lower detects smaller/fainter objects)"
-        }
-
-    fun iouLabel(lang: AppLanguage, percent: Int) =
-        if (lang == AppLanguage.BANGLA) {
-            "ওভারল্যাপ ফিল্টার (NMS IoU): $percent%"
-        } else {
-            "NMS Overlap IoU Threshold: $percent%"
-        }
-
-    fun resetSensitivityBtn(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) {
-            "ডিফল্ট সেন্সিটিভিটি (35%) ফিরিয়ে আনুন"
-        } else {
-            "Reset Sensitivity to Recommended Default (35%)"
-        }
-
-    fun directionSectionTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) {
-            "বস্তু গণনার দিক (Counting Line Direction)"
-        } else {
-            "Counting Line Crossing Direction"
-        }
-
-    fun cameraSectionTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) {
-            "ক্যামেরা ও ভাইব্রেশন অপশন"
-        } else {
-            "Camera & Hardware Options"
-        }
-
-    fun rearCameraTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "পিছনের ক্যামেরা ব্যবহার করুন (Rear Camera)" else "Use Rear Camera"
-
-    fun rearCameraSub(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "বন্ধ করলে সামনের ক্যামেরা চালু হবে" else "Switch off to use front camera"
-
-    fun hapticTitle(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "গণনার সময় ভাইব্রেশন (Haptic Tick)" else "Haptic Tick on Line Crossing"
-
-    fun hapticSub(lang: AppLanguage) =
-        if (lang == AppLanguage.BANGLA) "বস্তু দাগ পার হলে হালকা ভাইব্রেট করবে" else "Subtle vibration feedback when an object is counted"
 }
