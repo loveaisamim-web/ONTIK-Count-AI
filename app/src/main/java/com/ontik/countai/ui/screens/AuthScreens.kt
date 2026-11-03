@@ -272,7 +272,9 @@ fun AuthLoginScreen(
 fun AuthSignUpScreen(
     viewModel: CountViewModel,
     onBackToLogin: () -> Unit,
-    onSignUpSuccess: () -> Unit
+    onSignUpSuccess: () -> Unit,
+    onOpenTerms: () -> Unit = {},
+    onOpenPrivacy: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val settings by viewModel.settings.collectAsState()
