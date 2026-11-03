@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "119525718241",
+    "project_id": "ontik-count-ai",
+    "storage_bucket": "ontik-count-ai.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:119525718241:android:5c333ae84d7086eae09fa0",
+        "android_client_info": {
+          "package_name": "com.ontik.countai"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDCSoUE81Fc2PHI0y4p782mHS_rg1qHkL8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
