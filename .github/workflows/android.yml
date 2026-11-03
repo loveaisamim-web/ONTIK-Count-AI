@@ -36,16 +36,9 @@ jobs:
             curl -fsSL https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
           fi
 
-      - name: Verify Android SDK & Environment
+      - name: Build Debug APK with Stacktrace
         run: |
-          echo "Java version:"
-          java -version
-          echo "Gradle version:"
-          gradle --version
-
-      - name: Build Debug APK with Stacktrace & Detailed Logs
-        run: |
-          gradle assembleDebug --stacktrace --info
+          ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Verify Built APK Exists
         run: |

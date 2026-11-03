@@ -24,13 +24,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BookmarkAdded
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -66,6 +62,7 @@ import com.ontik.countai.ui.theme.OntikGreenAccent
 import com.ontik.countai.ui.theme.OntikGreenDark
 import com.ontik.countai.ui.theme.OntikGreenLight
 import com.ontik.countai.ui.theme.OntikGreenPrimary
+import com.ontik.countai.ui.theme.OntikIcons
 import com.ontik.countai.ui.theme.SoftGraySurface
 import com.ontik.countai.ui.theme.TextPrimaryDark
 import com.ontik.countai.ui.theme.TextSecondarySlate
@@ -112,7 +109,7 @@ fun PhotoCountingScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
                 Column {
                     Text(
@@ -132,7 +129,7 @@ fun PhotoCountingScreen(
             }
         }
 
-        // Photo Display & Interactive Bounding Box / Manual Point Canvas
+        // Photo Display
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -169,7 +166,6 @@ fun PhotoCountingScreen(
                             val w = size.width
                             val h = size.height
 
-                            // Draw AI Detections
                             photoState.aiDetections.forEachIndexed { idx, det ->
                                 if (idx in photoState.suppressedDetectionIndices) return@forEachIndexed
                                 val rect = det.boundingBox
@@ -192,7 +188,6 @@ fun PhotoCountingScreen(
                                 )
                             }
 
-                            // Draw User-Added Manual Correction Markers
                             photoState.manualAddedPoints.forEach { pt ->
                                 val cx = pt.normalizedX * w
                                 val cy = pt.normalizedY * h
@@ -244,7 +239,7 @@ fun PhotoCountingScreen(
             )
         }
 
-        // Count Summary & Manual Correction Card
+        // Count Summary Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
@@ -270,7 +265,7 @@ fun PhotoCountingScreen(
                         color = TextPrimaryDark
                     )
                     Text(
-                        text = "AI Boxes: ${photoState.activeAiCount}  |  Tap Marks: +${photoState.manualAddedPoints.size}",
+                        text = "AI Boxes: ${photoState.activeAiCount} | Tap Marks: +${photoState.manualAddedPoints.size}",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -284,7 +279,7 @@ fun PhotoCountingScreen(
                             contentColor = TextPrimaryDark
                         )
                     ) {
-                        Icon(Icons.Default.Remove, contentDescription = "Minus 1")
+                        Icon(OntikIcons.Minus, contentDescription = "Minus 1", tint = TextPrimaryDark)
                     }
                     FilledIconButton(
                         onClick = { viewModel.adjustPhotoCountManually(1) },
@@ -314,13 +309,13 @@ fun PhotoCountingScreen(
                             contentColor = WhiteBackground
                         )
                     ) {
-                        Icon(Icons.Default.BookmarkAdded, contentDescription = "Save Photo Session")
+                        Icon(OntikIcons.BookmarkCheck, contentDescription = "Save Photo Session")
                     }
                 }
             }
         }
 
-        // Bottom Photo Picker & Camera Buttons
+        // Bottom Action Buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -333,7 +328,7 @@ fun PhotoCountingScreen(
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
             ) {
-                Icon(Icons.Default.CameraAlt, contentDescription = null)
+                Icon(OntikIcons.Camera, contentDescription = null, tint = Color.White)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Capture Photo", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
@@ -350,7 +345,7 @@ fun PhotoCountingScreen(
                 shape = RoundedCornerShape(14.dp),
                 border = BorderStroke(1.dp, OntikGreenPrimary)
             ) {
-                Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = OntikGreenPrimary)
+                Icon(OntikIcons.PhotoLibrary, contentDescription = null, tint = OntikGreenPrimary)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Pick from Gallery", color = OntikGreenPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }

@@ -16,11 +16,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.TableView
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -45,6 +42,7 @@ import com.ontik.countai.ui.theme.DangerRed
 import com.ontik.countai.ui.theme.OntikGreenDark
 import com.ontik.countai.ui.theme.OntikGreenLight
 import com.ontik.countai.ui.theme.OntikGreenPrimary
+import com.ontik.countai.ui.theme.OntikIcons
 import com.ontik.countai.ui.theme.SoftGraySurface
 import com.ontik.countai.ui.theme.TextPrimaryDark
 import com.ontik.countai.ui.theme.TextSecondarySlate
@@ -78,7 +76,7 @@ fun HistoryScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
                 Column {
                     Text(
@@ -97,7 +95,7 @@ fun HistoryScreen(
             if (sessions.isNotEmpty()) {
                 IconButton(onClick = viewModel::clearAllHistory) {
                     Icon(
-                        imageVector = Icons.Default.DeleteSweep,
+                        imageVector = Icons.Default.Delete,
                         contentDescription = "Clear All History",
                         tint = DangerRed
                     )
@@ -105,7 +103,7 @@ fun HistoryScreen(
             }
         }
 
-        // Export CSV & TXT Buttons
+        // Export Buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -119,7 +117,7 @@ fun HistoryScreen(
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
             ) {
-                Icon(Icons.Default.TableView, contentDescription = null)
+                Icon(OntikIcons.Table, contentDescription = null)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Export CSV", fontWeight = FontWeight.Bold)
             }
@@ -133,7 +131,7 @@ fun HistoryScreen(
                 shape = RoundedCornerShape(14.dp),
                 border = BorderStroke(1.dp, OntikGreenPrimary)
             ) {
-                Icon(Icons.Default.Description, contentDescription = null, tint = OntikGreenPrimary)
+                Icon(OntikIcons.Document, contentDescription = null, tint = OntikGreenPrimary)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Export TXT", color = OntikGreenPrimary, fontWeight = FontWeight.Bold)
             }
@@ -162,7 +160,7 @@ fun HistoryScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Tap the green bookmark button on the Live Counting or Photo Counting screen to save a session with its timestamp, model details, and count breakdown.",
+                        text = "Tap the save button on the Live Counting or Photo Counting screen to save a session with its timestamp, model details, and count breakdown.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -230,12 +228,12 @@ private fun SessionHistoryCard(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "AI Detected: ${session.aiDetectedCount} • Manual Adj: ${if (session.manualDelta >= 0) "+${session.manualDelta}" else "${session.manualDelta}"} • ${session.direction}",
+                    text = "AI: ${session.aiDetectedCount} • Manual: ${if (session.manualDelta >= 0) "+${session.manualDelta}" else "${session.manualDelta}"} • ${session.direction}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextPrimaryDark
                 )
                 Text(
-                    text = "Model: ${session.modelName} (Conf ${(session.confidenceThreshold * 100).toInt()}%)",
+                    text = "Model: ${session.modelName} (${(session.confidenceThreshold * 100).toInt()}%)",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondarySlate
                 )

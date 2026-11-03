@@ -27,16 +27,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BookmarkAdded
-import androidx.compose.material.icons.filled.CropFree
-import androidx.compose.material.icons.filled.FlashOff
-import androidx.compose.material.icons.filled.FlashOn
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -75,6 +67,7 @@ import com.ontik.countai.ui.theme.CardBorderGray
 import com.ontik.countai.ui.theme.OntikGreenDark
 import com.ontik.countai.ui.theme.OntikGreenLight
 import com.ontik.countai.ui.theme.OntikGreenPrimary
+import com.ontik.countai.ui.theme.OntikIcons
 import com.ontik.countai.ui.theme.SoftGraySurface
 import com.ontik.countai.ui.theme.TextPrimaryDark
 import com.ontik.countai.ui.theme.TextSecondarySlate
@@ -117,7 +110,6 @@ fun LiveCountingScreen(
         }
     }
 
-    // Haptic pulse when a new object crosses the virtual counting line
     LaunchedEffect(liveState.lastCountPulseTimestamp) {
         if (liveState.lastCountPulseTimestamp > 0L && settings.hapticFeedbackEnabled) {
             view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
@@ -138,7 +130,7 @@ fun LiveCountingScreen(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Top Header Bar: App Name, Live Status Pill, Shortcuts
+        // Top Header Bar
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -166,14 +158,14 @@ fun LiveCountingScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 IconButton(onClick = onNavigateToPhoto) {
                     Icon(
-                        imageVector = Icons.Default.PhotoCamera,
+                        imageVector = OntikIcons.Camera,
                         contentDescription = "Photo Counting Mode",
                         tint = OntikGreenPrimary
                     )
                 }
                 IconButton(onClick = onNavigateToHistory) {
                     Icon(
-                        imageVector = Icons.Default.History,
+                        imageVector = OntikIcons.History,
                         contentDescription = "Counting History",
                         tint = TextPrimaryDark
                     )
@@ -188,7 +180,7 @@ fun LiveCountingScreen(
             }
         }
 
-        // Model / Confidence Diagnostic Banner
+        // Status Banner
         AnimatedVisibility(visible = liveState.statusBannerMessage != null) {
             val isMissingModel = liveState.modelEngineState is ModelEngineState.MissingModelFile
             Card(
@@ -228,7 +220,7 @@ fun LiveCountingScreen(
             }
         }
 
-        // Live CameraX Preview with Adjustable Zone & Virtual Counting Line
+        // Camera Preview with Zone Overlay
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -281,7 +273,7 @@ fun LiveCountingScreen(
                     }
                 }
 
-                // Floating Camera Controls (Torch + Zone Edit Toggle)
+                // Floating Camera Controls
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -296,7 +288,7 @@ fun LiveCountingScreen(
                         )
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CropFree,
+                            imageVector = OntikIcons.Crop,
                             contentDescription = "Adjust Counting Zone & Line"
                         )
                     }
@@ -309,13 +301,13 @@ fun LiveCountingScreen(
                         )
                     ) {
                         Icon(
-                            imageVector = if (liveState.torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                            imageVector = if (liveState.torchEnabled) OntikIcons.FlashOn else OntikIcons.FlashOff,
                             contentDescription = "Toggle Camera Flash"
                         )
                     }
                 }
 
-                // Bottom-left real-time telemetry badge inside preview
+                // Telemetry Badge
                 Surface(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
@@ -338,7 +330,7 @@ fun LiveCountingScreen(
             }
         }
 
-        // Prominent Total Count & Manual Correction Card
+        // Total Count Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -365,13 +357,12 @@ fun LiveCountingScreen(
                         modifier = Modifier.scale(countScale)
                     )
                     Text(
-                        text = "In Zone Now: ${liveState.currentlyDetectedInZone}  |  Manual: ${if (liveState.manualDelta >= 0) "+${liveState.manualDelta}" else "${liveState.manualDelta}"}",
+                        text = "In Zone: ${liveState.currentlyDetectedInZone} | Adj: ${if (liveState.manualDelta >= 0) "+${liveState.manualDelta}" else "${liveState.manualDelta}"}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondarySlate
                     )
                 }
 
-                // Manual Correction (-1 / +1) & Save Session Buttons
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -385,7 +376,7 @@ fun LiveCountingScreen(
                         ),
                         modifier = Modifier.size(42.dp)
                     ) {
-                        Icon(Icons.Default.Remove, contentDescription = "Decrease Count by 1")
+                        Icon(OntikIcons.Minus, contentDescription = "Decrease Count by 1", tint = TextPrimaryDark)
                     }
 
                     FilledIconButton(
@@ -409,13 +400,13 @@ fun LiveCountingScreen(
                         ),
                         modifier = Modifier.size(42.dp)
                     ) {
-                        Icon(Icons.Default.BookmarkAdded, contentDescription = "Save Session to History")
+                        Icon(OntikIcons.BookmarkCheck, contentDescription = "Save Session to History")
                     }
                 }
             }
         }
 
-        // Primary Action Bar: Start / Pause / Resume / Reset / Photo Mode
+        // Primary Action Controls
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -445,7 +436,7 @@ fun LiveCountingScreen(
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = OntikGreenDark)
                     ) {
-                        Icon(Icons.Default.Pause, contentDescription = null)
+                        Icon(OntikIcons.Pause, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Pause", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
@@ -487,7 +478,7 @@ fun LiveCountingScreen(
                 shape = RoundedCornerShape(14.dp),
                 border = BorderStroke(1.dp, OntikGreenPrimary)
             ) {
-                Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = OntikGreenPrimary)
+                Icon(OntikIcons.Camera, contentDescription = null, tint = OntikGreenPrimary)
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("Photo", color = OntikGreenPrimary, fontWeight = FontWeight.SemiBold)
             }

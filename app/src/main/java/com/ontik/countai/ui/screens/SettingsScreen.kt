@@ -19,8 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -52,6 +51,7 @@ import com.ontik.countai.ui.theme.CardBorderGray
 import com.ontik.countai.ui.theme.OntikGreenDark
 import com.ontik.countai.ui.theme.OntikGreenLight
 import com.ontik.countai.ui.theme.OntikGreenPrimary
+import com.ontik.countai.ui.theme.OntikIcons
 import com.ontik.countai.ui.theme.SoftGraySurface
 import com.ontik.countai.ui.theme.TextPrimaryDark
 import com.ontik.countai.ui.theme.TextSecondarySlate
@@ -89,7 +89,7 @@ fun SettingsScreen(
         // Header
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
             }
             Column {
                 Text(
@@ -181,7 +181,7 @@ fun SettingsScreen(
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
                 ) {
-                    Icon(Icons.Default.FileUpload, contentDescription = null)
+                    Icon(OntikIcons.FileUpload, contentDescription = null)
                     Text(
                         text = "  Import Custom .tflite Model from Phone Storage",
                         fontWeight = FontWeight.Bold
@@ -284,7 +284,7 @@ fun SettingsScreen(
             }
         }
 
-        // Section 4: Camera & Performance
+        // Section 4: Camera & Hardware Options
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
