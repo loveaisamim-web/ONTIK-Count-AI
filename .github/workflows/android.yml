@@ -38,7 +38,7 @@ jobs:
 
       - name: Build Debug APK with Stacktrace
         run: |
-          ./gradlew assembleDebug --stacktrace --no-daemon
+          gradle assembleDebug --stacktrace --no-daemon
 
       - name: Verify Built APK Exists
         run: |
