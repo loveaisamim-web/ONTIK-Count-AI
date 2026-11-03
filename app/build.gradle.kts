@@ -1,7 +1,23 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("com.google.devtools.ksp")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt.android)
+}
+
+// Conditional Google Services plugin if real google-services.json is placed in app/
+if (file("google-services.json").exists()) {
+    // When user adds google-services.json, Firebase automatically reads from it;
+    // otherwise FirebaseInitHelper safely initializes in offline-resilient mode.
+}
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -12,21 +28,49 @@ android {
         applicationId = "com.ontik.countai"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "2.0.0"
+        versionCode = 3
+        versionName = "3.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
+            useSupportLibrary = true
+        }
+
+        // 64-bit & ARM optimization for Play Store .aab and fast .apk downloads (~30MB)
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
-            useSupportLibrary = true
+
+        // RevenueCat Public SDK Key & Google Web Client ID injected via gradle.properties or env vars (never hardcoded secrets)
+        val rcKey = (project.findProperty("REVENUECAT_ANDROID_API_KEY") as? String)
+            ?: System.getenv("REVENUECAT_ANDROID_API_KEY")
+            ?: ""
+        val webClientId = (project.findProperty("GOOGLE_WEB_CLIENT_ID") as? String)
+            ?: System.getenv("GOOGLE_WEB_CLIENT_ID")
+            ?: ""
+
+        buildConfigField("String", "REVENUECAT_API_KEY", "\"$rcKey\"")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$webClientId\"")
+    }
+
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = file(keystoreProperties.getProperty("storeFile") ?: "release.jks")
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -68,52 +112,72 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
+    implementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(platform(libs.androidx.compose.bom))
 
-    // Core Android & Lifecycle
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
-    implementation("androidx.activity:activity-compose:1.9.0")
+    // Core & Splash Screen
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.activity.compose)
 
-    // Jetpack Compose UI & Material 3
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-core")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
+    // Compose UI & Material 3
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.core)
+    implementation(libs.androidx.navigation.compose)
 
-    // CameraX (1280x720 ImageAnalysis + Camera2Interop for AE/AWB/AF lock & fast shutter)
-    val cameraxVersion = "1.3.4"
-    implementation("androidx.camera:camera-core:$cameraxVersion")
-    implementation("androidx.camera:camera-camera2:$cameraxVersion")
-    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
-    implementation("androidx.camera:camera-view:$cameraxVersion")
+    // Hilt Dependency Injection + WorkManager
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.hilt.work)
+    ksp(libs.androidx.hilt.compiler)
+    implementation(libs.androidx.work.runtime.ktx)
 
-    // Official OpenCV Android SDK (Classical Computer Vision: Grayscale + Lab, CLAHE, Morphology, Contours, Moments, Watershed)
-    implementation("org.opencv:opencv:4.9.0")
+    // CameraX & OpenCV 4.9.0
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.opencv)
 
-    // Room Database (Session History, Test Mode Accuracy Records)
-    val roomVersion = "2.6.1"
-    implementation("androidx.room:room-runtime:$roomVersion")
-    implementation("androidx.room:room-ktx:$roomVersion")
-    ksp("androidx.room:room-compiler:$roomVersion")
+    // Room Database & Encrypted SharedPreferences / DataStore
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.security.crypto)
 
-    // DataStore Preferences (Presets, Calibration, Sensitivity, Language, Theme)
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    // Firebase Auth, Firestore, Remote Config, Analytics, Crashlytics, App Check (Play Integrity)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth.ktx)
+    implementation(libs.firebase.firestore.ktx)
+    implementation(libs.firebase.config.ktx)
+    implementation(libs.firebase.analytics.ktx)
+    implementation(libs.firebase.crashlytics.ktx)
+    implementation(libs.firebase.appcheck.playintegrity)
 
-    // Coroutines & ExifInterface
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // Google Sign-In via Credential Manager API
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
 
-    // Unit Testing (Synthetic tests for Kalman, Hungarian, Line Crossing, Area Split)
-    testImplementation("junit:junit:4.13.2")
+    // RevenueCat Play Billing, In-App Review, In-App Updates, AdMob
+    implementation(libs.revenuecat.purchases)
+    implementation(libs.play.review.ktx)
+    implementation(libs.play.app.update.ktx)
+    implementation(libs.play.services.ads)
 
-    // Debug
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    // Coroutines & Utilities
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
+    implementation(libs.androidx.exifinterface)
+
+    // Unit Testing
+    testImplementation(libs.junit)
 }

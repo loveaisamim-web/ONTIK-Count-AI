@@ -13,27 +13,23 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.ontik.countai.domain.model.AppThemeMode
 import com.ontik.countai.ui.navigation.OntikNavGraph
 import com.ontik.countai.ui.theme.OntikCountAITheme
 import com.ontik.countai.ui.viewmodel.CountViewModel
-import com.ontik.countai.ui.viewmodel.CountViewModelFactory
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val app = application as OntikCountApp
-        val factory = CountViewModelFactory(
-            application = app,
-            countRepository = app.countRepository,
-            settingsRepository = app.settingsRepository
-        )
-
         setContent {
-            val countViewModel: CountViewModel = viewModel(factory = factory)
+            val countViewModel: CountViewModel = hiltViewModel()
             val settings by countViewModel.settings.collectAsState()
 
             LaunchedEffect(settings.keepScreenOn) {
@@ -59,5 +55,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Reconcile Billing & Firestore on app resume when online
     }
 }

@@ -1,40 +1,65 @@
 package com.ontik.countai.ui.viewmodel
 
+import android.app.Activity
 import android.app.Application
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Build
 import android.os.SystemClock
 import androidx.camera.core.ImageProxy
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.FirebaseApp
+import com.google.firebase.analytics.FirebaseAnalytics
+import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig
+import com.ontik.countai.BuildConfig
+import com.ontik.countai.auth.AuthRepository
+import com.ontik.countai.auth.AuthResult
+import com.ontik.countai.billing.BillingRepository
+import com.ontik.countai.billing.PlanManager
+import com.ontik.countai.billing.PurchaseUiState
+import com.ontik.countai.billing.StoreProductPricing
 import com.ontik.countai.cv.KalmanHungarianTracker
 import com.ontik.countai.cv.OpenCvGrainProcessor
 import com.ontik.countai.data.local.CountSessionEntity
+import com.ontik.countai.data.remote.SyncWorker
 import com.ontik.countai.data.repository.AppSettings
 import com.ontik.countai.data.repository.CountRepository
 import com.ontik.countai.data.repository.SettingsRepository
 import com.ontik.countai.domain.model.AccuracyConfidenceLevel
 import com.ontik.countai.domain.model.AppLanguage
 import com.ontik.countai.domain.model.AppThemeMode
+import com.ontik.countai.domain.model.BatchCountEntry
 import com.ontik.countai.domain.model.CountingDirection
 import com.ontik.countai.domain.model.DebugFrameSnapshot
+import com.ontik.countai.domain.model.GatedFeature
 import com.ontik.countai.domain.model.GrainPreset
 import com.ontik.countai.domain.model.NormalizedRect
+import com.ontik.countai.domain.model.PlanState
+import com.ontik.countai.domain.model.SyncStatus
 import com.ontik.countai.domain.model.TrackedGrain
+import com.ontik.countai.domain.model.UserProfile
 import com.ontik.countai.util.ImageProxyUtils
+import com.ontik.countai.util.PdfReportGenerator
 import com.ontik.countai.util.SessionExportHelper
 import com.ontik.countai.util.SoundFeedbackManager
+import com.revenuecat.purchases.Package
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.inject.Inject
 import kotlin.math.abs
 
 enum class EngineStatus {
@@ -63,6 +88,9 @@ data class LiveCountingUiState(
     val debugMaskBitmap: Bitmap? = null,
     val torchEnabled: Boolean = false,
     val isTestMode100Active: Boolean = false,
+    val targetGoalReachedDialogVisible: Boolean = false,
+    val dailyLimitHitPaywallPromptVisible: Boolean = false,
+    val batches: List<BatchCountEntry> = emptyList(),
     val contextualHintEn: String? = null,
     val contextualHintBn: String? = null,
     val lastCountPulseTimestampMs: Long = 0L,
@@ -72,14 +100,21 @@ data class LiveCountingUiState(
     val totalCount: Int
         get() = (autoCountLineA + manualDelta).coerceAtLeast(0)
 
+    val batchGrandTotal: Int
+        get() = batches.sumOf { it.count } + totalCount
+
     val verificationMismatchWarning: Boolean
         get() = autoCountLineB > 0 && abs(autoCountLineA - autoCountLineB) >= 3
 }
 
-class CountViewModel(
+@HiltViewModel
+class CountViewModel @Inject constructor(
     application: Application,
     private val countRepository: CountRepository,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val planManager: PlanManager,
+    private val authRepository: AuthRepository,
+    private val billingRepository: BillingRepository
 ) : AndroidViewModel(application) {
 
     val settings: StateFlow<AppSettings> = settingsRepository.settingsFlow.stateIn(
@@ -88,7 +123,22 @@ class CountViewModel(
         initialValue = AppSettings()
     )
 
-    val historySessions: StateFlow<List<CountSessionEntity>> = countRepository.allSessions.stateIn(
+    val planState: StateFlow<PlanState> = planManager.planState
+    val currentUser: StateFlow<UserProfile> = authRepository.currentUser
+    val storePricing: StateFlow<StoreProductPricing> = billingRepository.pricingState
+    val purchaseUiState: StateFlow<PurchaseUiState> = billingRepository.purchaseState
+
+    // Free users see latest 5 sessions; Pro users see unlimited history
+    val historySessions: StateFlow<List<CountSessionEntity>> = combine(
+        countRepository.activeSessions,
+        planManager.planState
+    ) { all, plan ->
+        if (plan.isEffectivePro) {
+            all
+        } else {
+            all.take(plan.freeHistoryLimit)
+        }
+    }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -97,24 +147,224 @@ class CountViewModel(
     private val _uiState = MutableStateFlow(LiveCountingUiState())
     val uiState: StateFlow<LiveCountingUiState> = _uiState.asStateFlow()
 
+    private val _authLoading = MutableStateFlow(false)
+    val authLoading: StateFlow<Boolean> = _authLoading.asStateFlow()
+
+    private val _authErrorBanner = MutableStateFlow<Pair<String, String>?>(null)
+    val authErrorBanner: StateFlow<Pair<String, String>?> = _authErrorBanner.asStateFlow()
+
     private val cvProcessor = OpenCvGrainProcessor()
     private val tracker = KalmanHungarianTracker()
     private val soundManager = SoundFeedbackManager()
     private val isProcessingFrame = AtomicBoolean(false)
 
-    // Undo history stack (stores incremental count additions so user can undo the last count)
     private val countUndoStack = ArrayDeque<Int>(30)
-
-    // Rolling timestamps of counted grains in the last 3 seconds to compute Rate/sec
     private val recentCountTimestamps = ArrayDeque<Pair<Long, Int>>(60)
-
-    // FPS measurement window
     private val frameTimestamps = ArrayDeque<Long>(35)
-
-    // 10-second Debug Recorder buffer
     private val debugSnapshots = ArrayDeque<DebugFrameSnapshot>(320)
 
+    init {
+        fetchRemoteConfigAndRefreshAuth()
+    }
+
+    private fun fetchRemoteConfigAndRefreshAuth() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val profile = authRepository.refreshSessionAndSyncFirestore()
+            if (!profile.isGuest && profile.uid.isNotBlank()) {
+                billingRepository.linkFirebaseUser(profile.uid)
+                try {
+                    if (FirebaseApp.getApps(getApplication()).isNotEmpty()) {
+                        FirebaseCrashlytics.getInstance().setUserId(profile.uid)
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            billingRepository.refreshCustomerInfo()
+
+            try {
+                if (FirebaseApp.getApps(getApplication()).isNotEmpty()) {
+                    val rc = FirebaseRemoteConfig.getInstance()
+                    rc.fetchAndActivate().addOnSuccessListener {
+                        val dailyLimit = rc.getLong("free_daily_limit").toInt().let { if (it <= 0) 500 else it }
+                        val histLimit = rc.getLong("free_history_limit").toInt().let { if (it <= 0) 5 else it }
+                        val showAds = if (rc.getKeysByPrefix("show_ads").isNotEmpty()) rc.getBoolean("show_ads") else true
+                        val monthlyTxt = rc.getString("pro_monthly_price_text")
+                        val yearlyTxt = rc.getString("pro_yearly_price_text")
+                        val maintMsg = rc.getString("maintenance_message")
+                        val minVer = rc.getLong("min_app_version").toInt()
+
+                        planManager.applyRemoteConfigValues(
+                            freeDailyLimit = dailyLimit,
+                            freeHistoryLimit = histLimit,
+                            showAds = showAds,
+                            monthlyPriceText = monthlyTxt,
+                            yearlyPriceText = yearlyTxt,
+                            maintenanceMessage = maintMsg,
+                            minAppVersionCode = minVer,
+                            currentAppVersionCode = BuildConfig.VERSION_CODE
+                        )
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    fun canUseFeature(feature: GatedFeature): Boolean = planManager.canUse(feature)
+
+    // Authentication Actions
+    fun signInWithEmail(email: String, password: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _authLoading.value = true
+            _authErrorBanner.value = null
+            when (val res = authRepository.signInWithEmail(email, password)) {
+                is AuthResult.Success -> {
+                    _authLoading.value = false
+                    billingRepository.linkFirebaseUser(res.profile.uid)
+                    SyncWorker.triggerImmediateSync(getApplication())
+                    onSuccess()
+                }
+                is AuthResult.Error -> {
+                    _authLoading.value = false
+                    _authErrorBanner.value = res.messageEn to res.messageBn
+                }
+            }
+        }
+    }
+
+    fun signUpWithEmail(name: String, email: String, password: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _authLoading.value = true
+            _authErrorBanner.value = null
+            when (val res = authRepository.signUpWithEmail(name, email, password)) {
+                is AuthResult.Success -> {
+                    _authLoading.value = false
+                    billingRepository.linkFirebaseUser(res.profile.uid)
+                    SyncWorker.triggerImmediateSync(getApplication())
+                    onSuccess()
+                }
+                is AuthResult.Error -> {
+                    _authLoading.value = false
+                    _authErrorBanner.value = res.messageEn to res.messageBn
+                }
+            }
+        }
+    }
+
+    fun signInWithGoogleToken(idToken: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _authLoading.value = true
+            _authErrorBanner.value = null
+            when (val res = authRepository.signInWithGoogleIdToken(idToken)) {
+                is AuthResult.Success -> {
+                    _authLoading.value = false
+                    billingRepository.linkFirebaseUser(res.profile.uid)
+                    SyncWorker.triggerImmediateSync(getApplication())
+                    onSuccess()
+                }
+                is AuthResult.Error -> {
+                    _authLoading.value = false
+                    _authErrorBanner.value = res.messageEn to res.messageBn
+                }
+            }
+        }
+    }
+
+    fun sendPasswordResetEmail(email: String, onSent: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val lang = settings.value.language
+            when (val res = authRepository.sendPasswordReset(email)) {
+                is AuthResult.Success -> {
+                    onSent(
+                        true,
+                        if (lang == AppLanguage.BANGLA) "পাসওয়ার্ড রিসেট লিংক ইমেইলে পাঠানো হয়েছে।" else "Password reset email sent."
+                    )
+                }
+                is AuthResult.Error -> {
+                    onSent(false, if (lang == AppLanguage.BANGLA) res.messageBn else res.messageEn)
+                }
+            }
+        }
+    }
+
+    fun updateProfileName(newName: String) {
+        viewModelScope.launch {
+            authRepository.updateDisplayName(newName)
+        }
+    }
+
+    fun signOut(onSignedOut: () -> Unit) {
+        viewModelScope.launch {
+            billingRepository.logOutRevenueCat()
+            authRepository.signOut()
+            onSignedOut()
+        }
+    }
+
+    fun deleteAccountAndData(passwordIfEmail: String?, onDeleted: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            _authLoading.value = true
+            val lang = settings.value.language
+            when (val res = authRepository.deleteAccountAndAllData(passwordIfEmail)) {
+                is AuthResult.Success -> {
+                    _authLoading.value = false
+                    billingRepository.logOutRevenueCat()
+                    onDeleted(
+                        true,
+                        if (lang == AppLanguage.BANGLA) "অ্যাকাউন্ট ও সমস্ত ডেটা মুছে ফেলা হয়েছে।" else "Account and all data permanently deleted."
+                    )
+                }
+                is AuthResult.Error -> {
+                    _authLoading.value = false
+                    onDeleted(false, if (lang == AppLanguage.BANGLA) res.messageBn else res.messageEn)
+                }
+            }
+        }
+    }
+
+    fun clearAuthError() {
+        _authErrorBanner.value = null
+    }
+
+    // Billing & Paywall Actions
+    fun purchaseProPackage(activity: Activity, pkg: Package?) {
+        val user = currentUser.value
+        if (!user.isGuest && !user.isEmailVerified && !user.isGoogleAccount) {
+            _authErrorBanner.value = "Please verify your email address before purchasing PRO." to
+                "PRO কেনার আগে আপনার ইমেইল ভেরিফাই করুন।"
+            return
+        }
+        billingRepository.purchasePackage(activity, pkg)
+    }
+
+    fun restorePurchases() {
+        billingRepository.restorePurchases()
+    }
+
+    fun openManageSubscription(context: Context) {
+        billingRepository.openPlayStoreSubscriptionsPage(context)
+    }
+
+    fun dismissDailyLimitPaywallPrompt() {
+        _uiState.update { it.copy(dailyLimitHitPaywallPromptVisible = false) }
+    }
+
+    // Cloud Sync Trigger
+    fun triggerManualCloudSync() {
+        SyncWorker.triggerImmediateSync(getApplication())
+    }
+
+    // Live Counting Controls
     fun startCounting() {
+        if (!planManager.canUse(GatedFeature.UNLIMITED_DAILY_COUNTING)) {
+            _uiState.update {
+                it.copy(
+                    status = EngineStatus.PAUSED,
+                    dailyLimitHitPaywallPromptVisible = true
+                )
+            }
+            return
+        }
         _uiState.update { state ->
             val startMs = if (state.sessionStartElapsedMs == 0L) SystemClock.elapsedRealtime() else state.sessionStartElapsedMs
             state.copy(
@@ -129,8 +379,7 @@ class CountViewModel(
     }
 
     fun toggleStartPause() {
-        val current = _uiState.value.status
-        if (current == EngineStatus.COUNTING) {
+        if (_uiState.value.status == EngineStatus.COUNTING) {
             pauseCounting()
         } else {
             startCounting()
@@ -149,10 +398,39 @@ class CountViewModel(
                 manualDelta = 0,
                 inZoneGrainCount = 0,
                 countRatePerSec = 0f,
+                targetGoalReachedDialogVisible = false,
                 trackedGrains = emptyList(),
                 sessionStartElapsedMs = SystemClock.elapsedRealtime()
             )
         }
+    }
+
+    fun saveCurrentBatchAndResetCounter() {
+        val current = _uiState.value.totalCount
+        if (current <= 0) return
+        _uiState.update { state ->
+            val nextBatchNum = state.batches.size + 1
+            val updatedBatches = state.batches + BatchCountEntry(
+                batchNumber = nextBatchNum,
+                count = current,
+                timestampMs = System.currentTimeMillis()
+            )
+            state.copy(
+                batches = updatedBatches,
+                autoCountLineA = 0,
+                autoCountLineB = 0,
+                manualDelta = 0
+            )
+        }
+        tracker.reset()
+    }
+
+    fun clearAllBatches() {
+        _uiState.update { it.copy(batches = emptyList()) }
+    }
+
+    fun dismissTargetReachedDialog() {
+        _uiState.update { it.copy(targetGoalReachedDialogVisible = false) }
     }
 
     fun triggerAutoCalibrate() {
@@ -181,10 +459,17 @@ class CountViewModel(
     }
 
     fun adjustCountManually(delta: Int) {
+        if (delta > 0 && !planManager.canUse(GatedFeature.UNLIMITED_DAILY_COUNTING)) {
+            _uiState.update { it.copy(dailyLimitHitPaywallPromptVisible = true) }
+            return
+        }
         _uiState.update { state ->
             val next = state.totalCount + delta
             if (next < 0) state else {
-                if (delta > 0) countUndoStack.addLast(delta)
+                if (delta > 0) {
+                    planManager.recordGrainsCounted(delta)
+                    countUndoStack.addLast(delta)
+                }
                 state.copy(manualDelta = state.manualDelta + delta)
             }
         }
@@ -210,8 +495,8 @@ class CountViewModel(
             state.copy(
                 isTestMode100Active = nextTest,
                 status = EngineStatus.COUNTING,
-                contextualHintEn = if (nextTest) "100-Grain Test Mode Active: Drop exactly 100 grains, then tap Save" else null,
-                contextualHintBn = if (nextTest) "১০০ দানা টেস্ট মোড চালু: ঠিক ১০০টি দানা পার করে সেভ চাপুন" else null
+                contextualHintEn = if (nextTest) "100-Grain Test Mode Active: Drop 100 grains, then tap Save" else null,
+                contextualHintBn = if (nextTest) "১০০ দানা টেস্ট মোড চালু: ১০০টি দানা পার করে সেভ চাপুন" else null
             )
         }
     }
@@ -219,23 +504,33 @@ class CountViewModel(
     fun saveSessionToHistory(customLabel: String = "", customNotes: String = ""): CountSessionEntity? {
         val st = _uiState.value
         val cfg = settings.value
-        val finalTotal = if (st.totalCount > 0) st.totalCount else st.inZoneGrainCount
+        val finalTotal = if (cfg.batchModeEnabled && st.batchGrandTotal > 0) {
+            st.batchGrandTotal
+        } else if (st.totalCount > 0) {
+            st.totalCount
+        } else {
+            st.inZoneGrainCount
+        }
         if (finalTotal <= 0 && !st.isTestMode100Active) return null
 
         val durationSec = ((SystemClock.elapsedRealtime() - st.sessionStartElapsedMs) / 1000L).coerceAtLeast(1L)
-        val errPct = if (st.isTestMode100Active) {
-            abs(finalTotal - 100).toFloat()
-        } else {
-            0f
-        }
-        val defaultLabel = if (st.isTestMode100Active) {
-            "100-Grain Accuracy Test (${String.format(java.util.Locale.US, "%.1f%%", 100f - errPct)} acc)"
-        } else {
-            cfg.activePreset.nameEn
+        val errPct = if (st.isTestMode100Active) abs(finalTotal - 100).toFloat() else 0f
+        val defaultLabel = when {
+            st.isTestMode100Active -> "100-Grain Test (${String.format(java.util.Locale.US, "%.1f%%", 100f - errPct)} acc)"
+            cfg.batchModeEnabled && st.batches.isNotEmpty() -> "${cfg.activePreset.nameEn} (${st.batches.size + 1} Batches)"
+            else -> cfg.activePreset.nameEn
         }
 
+        val syncFlag = if (planManager.canUse(GatedFeature.CLOUD_BACKUP_SYNC) && !currentUser.value.isGuest) {
+            SyncStatus.PENDING_UPLOAD.name
+        } else {
+            SyncStatus.LOCAL_ONLY.name
+        }
+
+        val nowMs = System.currentTimeMillis()
         val entity = CountSessionEntity(
-            timestampMs = System.currentTimeMillis(),
+            timestampMs = nowMs,
+            updatedAtMs = nowMs,
             label = customLabel.ifBlank { defaultLabel },
             presetName = cfg.activePreset.nameEn,
             finalCount = finalTotal,
@@ -246,11 +541,19 @@ class CountViewModel(
             isTestModeSession = st.isTestMode100Active,
             expectedTestCount = 100,
             accuracyErrorPercent = errPct,
-            notes = customNotes
+            notes = customNotes,
+            deleted = false,
+            syncStatus = syncFlag
         )
 
         viewModelScope.launch(Dispatchers.IO) {
             countRepository.saveSession(entity)
+            settingsRepository.incrementCompletedSessions()
+            val pState = planManager.planState.value
+            authRepository.syncDailyCountToFirestore(pState.todayDateIso, pState.todayUsedCount)
+            if (planManager.canUse(GatedFeature.CLOUD_BACKUP_SYNC)) {
+                SyncWorker.triggerImmediateSync(getApplication())
+            }
         }
         return entity
     }
@@ -258,27 +561,44 @@ class CountViewModel(
     fun updateHistorySession(session: CountSessionEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             countRepository.updateSession(session)
+            if (planManager.canUse(GatedFeature.CLOUD_BACKUP_SYNC)) {
+                SyncWorker.triggerImmediateSync(getApplication())
+            }
         }
     }
 
     fun deleteHistorySession(session: CountSessionEntity) {
         viewModelScope.launch(Dispatchers.IO) {
-            countRepository.deleteSession(session)
+            countRepository.softDeleteSession(session)
+            if (planManager.canUse(GatedFeature.CLOUD_BACKUP_SYNC)) {
+                SyncWorker.triggerImmediateSync(getApplication())
+            }
         }
     }
 
-    fun clearAllHistory() {
-        viewModelScope.launch(Dispatchers.IO) {
-            countRepository.clearAllHistory()
+    fun exportHistoryCsv(onBlockedByFreePlan: () -> Unit) {
+        if (!planManager.canUse(GatedFeature.CSV_EXPORT)) {
+            onBlockedByFreePlan()
+            return
         }
-    }
-
-    fun exportHistoryCsv() {
         val list = historySessions.value
         if (list.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
             val file = SessionExportHelper.exportToCsv(getApplication(), list)
             SessionExportHelper.shareExportedFile(getApplication(), file, "text/csv")
+        }
+    }
+
+    fun exportHistoryPdfReport(onBlockedByFreePlan: () -> Unit) {
+        if (!planManager.canUse(GatedFeature.PDF_EXPORT)) {
+            onBlockedByFreePlan()
+            return
+        }
+        val list = historySessions.value
+        if (list.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val file = PdfReportGenerator.generateSessionReportPdf(getApplication(), list)
+            SessionExportHelper.shareExportedFile(getApplication(), file, "application/pdf")
         }
     }
 
@@ -288,6 +608,29 @@ class CountViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val file: File = SessionExportHelper.exportDebugLog(getApplication(), snaps)
             SessionExportHelper.shareExportedFile(getApplication(), file, "text/csv")
+        }
+    }
+
+    fun sendFeedbackEmail(context: Context) {
+        try {
+            val body = buildString {
+                appendLine("--- ONTIK Count AI Diagnostic Info ---")
+                appendLine("App Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})")
+                appendLine("Plan Tier: ${planState.value.tier.id}")
+                appendLine("Active Preset: ${settings.value.activePreset.nameEn}")
+                appendLine("--------------------------------------")
+                appendLine()
+                appendLine("Describe your feedback or issue below:")
+            }
+            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                data = Uri.parse("mailto:support@ontikcountai.com")
+                putExtra(Intent.EXTRA_SUBJECT, "ONTIK Count AI Feedback (v${BuildConfig.VERSION_NAME})")
+                putExtra(Intent.EXTRA_TEXT, body)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (_: Throwable) {
         }
     }
 
@@ -302,7 +645,6 @@ class CountViewModel(
                 val nowMs = SystemClock.elapsedRealtime()
                 val cfg = settings.value
 
-                // Update rolling FPS
                 frameTimestamps.addLast(nowMs)
                 while (frameTimestamps.size > 1 && nowMs - frameTimestamps.first() > 1000L) {
                     frameTimestamps.removeFirst()
@@ -348,11 +690,19 @@ class CountViewModel(
                         isCountingActive = countingActive
                     )
 
-                    val addedCount = trackerOut.newlyCountedLineA
-                    if (addedCount > 0) {
-                        countUndoStack.addLast(addedCount)
+                    val rawAdded = trackerOut.newlyCountedLineA
+                    val allowedAdded = if (rawAdded > 0 && countingActive) {
+                        planManager.recordGrainsCounted(rawAdded)
+                    } else {
+                        0
+                    }
+
+                    val hitFreeLimitNow = rawAdded > 0 && allowedAdded < rawAdded && !planManager.canUse(GatedFeature.UNLIMITED_DAILY_COUNTING)
+
+                    if (allowedAdded > 0) {
+                        countUndoStack.addLast(allowedAdded)
                         while (countUndoStack.size > 30) countUndoStack.removeFirst()
-                        recentCountTimestamps.addLast(nowMs to addedCount)
+                        recentCountTimestamps.addLast(nowMs to allowedAdded)
 
                         if (cfg.soundBeepEnabled) {
                             soundManager.playCountTick(cfg.soundVolume)
@@ -368,14 +718,24 @@ class CountViewModel(
                     val inZoneTotalGrains = cvOut.blobs.sumOf { it.estimatedGrainCount }
 
                     val prevTotal = _uiState.value.totalCount
-                    val newAutoA = _uiState.value.autoCountLineA + addedCount
+                    val newAutoA = _uiState.value.autoCountLineA + allowedAdded
                     val newTotal = (newAutoA + _uiState.value.manualDelta).coerceAtLeast(0)
-                    val crossedHundredMilestone = addedCount > 0 && (newTotal / 100) > (prevTotal / 100)
-                    if (crossedHundredMilestone && cfg.soundBeepEnabled) {
+
+                    // Check Target Count Goal (Phase 6.1)
+                    val targetGoal = cfg.targetCountGoal
+                    val reachedTargetNow = targetGoal > 0 && prevTotal < targetGoal && newTotal >= targetGoal
+                    val crossedHundredMilestone = allowedAdded > 0 && (newTotal / 100) > (prevTotal / 100)
+
+                    if ((crossedHundredMilestone || reachedTargetNow) && cfg.soundBeepEnabled) {
                         soundManager.playMilestoneChime(cfg.soundVolume)
                     }
 
-                    // Record into 10-second debug recorder
+                    val finalStatusAfterChecks = if (hitFreeLimitNow || reachedTargetNow) {
+                        EngineStatus.PAUSED
+                    } else {
+                        nextStatus
+                    }
+
                     synchronized(debugSnapshots) {
                         debugSnapshots.addLast(
                             DebugFrameSnapshot(
@@ -394,7 +754,7 @@ class CountViewModel(
 
                     _uiState.update { state ->
                         state.copy(
-                            status = nextStatus,
+                            status = finalStatusAfterChecks,
                             calibrationProgress = cvOut.calibrationProgress,
                             isCalibrated = cvOut.isCalibrated,
                             cameraLockedAfterCalibration = cvOut.isCalibrated && cfg.lockCameraExposureFocus,
@@ -409,10 +769,12 @@ class CountViewModel(
                             noiseStd = cvOut.noiseStd,
                             trackedGrains = trackerOut.activeTracks,
                             debugMaskBitmap = cvOut.debugMaskBitmap,
+                            targetGoalReachedDialogVisible = state.targetGoalReachedDialogVisible || reachedTargetNow,
+                            dailyLimitHitPaywallPromptVisible = state.dailyLimitHitPaywallPromptVisible || hitFreeLimitNow,
                             contextualHintEn = cvOut.contextualHintEn ?: if (trackerOut.frameDropDetected) "Low FPS detected — gating widened automatically" else null,
                             contextualHintBn = cvOut.contextualHintBn ?: if (trackerOut.frameDropDetected) "ফ্রেম রেট কম — ট্র্যাকিং গেট স্বয়ংক্রিয়ভাবে বাড়ানো হয়েছে" else null,
-                            lastCountPulseTimestampMs = if (addedCount > 0) nowMs else state.lastCountPulseTimestampMs,
-                            lastMilestoneHundredTimestampMs = if (crossedHundredMilestone) nowMs else state.lastMilestoneHundredTimestampMs
+                            lastCountPulseTimestampMs = if (allowedAdded > 0) nowMs else state.lastCountPulseTimestampMs,
+                            lastMilestoneHundredTimestampMs = if (crossedHundredMilestone || reachedTargetNow) nowMs else state.lastMilestoneHundredTimestampMs
                         )
                     }
 
@@ -426,14 +788,22 @@ class CountViewModel(
     }
 
     // Settings Delegations
-    fun applyPreset(preset: GrainPreset) {
+    fun applyPreset(preset: GrainPreset, onBlockedCustomPreset: () -> Unit) {
+        if (preset == GrainPreset.CUSTOM && !planManager.canUse(GatedFeature.CUSTOM_PRESETS)) {
+            onBlockedCustomPreset()
+            return
+        }
         viewModelScope.launch {
             settingsRepository.applyPreset(preset)
             cvProcessor.setManualSingleGrainArea(preset.defaultSingleGrainAreaPx)
         }
     }
 
-    fun saveCustomPreset() {
+    fun saveCustomPreset(onBlockedByFreePlan: () -> Unit) {
+        if (!planManager.canUse(GatedFeature.CUSTOM_PRESETS)) {
+            onBlockedByFreePlan()
+            return
+        }
         viewModelScope.launch { settingsRepository.saveCurrentAsCustomPreset() }
     }
 
@@ -530,6 +900,26 @@ class CountViewModel(
         viewModelScope.launch { settingsRepository.setOnboardingCompleted() }
     }
 
+    fun setAnalyticsConsent(granted: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setAnalyticsConsent(granted)
+            try {
+                if (FirebaseApp.getApps(getApplication()).isNotEmpty()) {
+                    FirebaseAnalytics.getInstance(getApplication()).setAnalyticsCollectionEnabled(granted)
+                }
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    fun updateTargetCountGoal(goal: Int) {
+        viewModelScope.launch { settingsRepository.updateTargetCountGoal(goal) }
+    }
+
+    fun updateBatchMode(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateBatchMode(enabled) }
+    }
+
     fun updateRoiAndLines(roi: NormalizedRect, lineA: Float, lineB: Float) {
         viewModelScope.launch { settingsRepository.updateRoiAndLines(roi, lineA, lineB) }
     }
@@ -538,19 +928,5 @@ class CountViewModel(
         super.onCleared()
         cvProcessor.release()
         soundManager.release()
-    }
-}
-
-class CountViewModelFactory(
-    private val application: Application,
-    private val countRepository: CountRepository,
-    private val settingsRepository: SettingsRepository
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(CountViewModel::class.java)) {
-            return CountViewModel(application, countRepository, settingsRepository) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }
 }

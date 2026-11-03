@@ -1,0 +1,384 @@
+package com.ontik.countai.ui.screens
+
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.ontik.countai.domain.model.AppLanguage
+import com.ontik.countai.ui.theme.DangerRed
+import com.ontik.countai.ui.theme.OntikAmberAccent
+import com.ontik.countai.ui.theme.OntikGreenPrimary
+import com.ontik.countai.ui.viewmodel.CountViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@Composable
+fun ProfileScreen(
+    viewModel: CountViewModel,
+    onBack: () -> Unit,
+    onNavigateToLogin: () -> Unit,
+    onNavigateToPaywall: () -> Unit
+) {
+    val context = LocalContext.current
+    val user by viewModel.currentUser.collectAsState()
+    val planState by viewModel.planState.collectAsState()
+    val settings by viewModel.settings.collectAsState()
+    val isBn = settings.language == AppLanguage.BANGLA
+
+    var editName by remember(user.name) { mutableStateOf(user.name) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
+    var reauthPassword by remember { mutableStateOf("") }
+
+    val dateFormatter = remember { SimpleDateFormat("MMM dd, yyyy", Locale.US) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                text = if (isBn) "প্রোফাইল ও অ্যাকাউন্ট (Profile)" else "Account & Plan Profile",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        // Avatar + Plan Badge Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(OntikGreenPrimary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val initials = user.name.trim().take(2).uppercase()
+                    if (initials.isNotEmpty()) {
+                        Text(
+                            text = initials,
+                            color = Color.White,
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    } else {
+                        Icon(Icons.Default.Person, contentDescription = null, tint = Color.White)
+                    }
+                }
+
+                // Plan Badge (FREE / PRO with Expiry Date)
+                val isPro = planState.isEffectivePro
+                Surface(
+                    color = if (isPro) OntikAmberAccent else OntikGreenPrimary.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    val expiryStr = planState.proExpiresAtMs?.let { " • Exp: ${dateFormatter.format(Date(it))}" } ?: ""
+                    Text(
+                        text = "${planState.tier.badge(settings.language)}$expiryStr",
+                        color = if (isPro) Color.Black else OntikGreenPrimary,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                    )
+                }
+
+                Text(
+                    text = if (user.isGuest) {
+                        if (isBn) "গেস্ট মোড (শুধুমাত্র লোকাল ডেটা)" else "Guest Mode (Local Storage Only)"
+                    } else {
+                        user.email
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (user.isGuest) {
+                    Button(
+                        onClick = onNavigateToLogin,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (isBn) "ডেটা ব্যাকআপ রাখতে সাইন ইন করুন" else "Sign In to Back Up Your Data",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text(if (isBn) "নাম পরিবর্তন করুন" else "Display Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.updateProfileName(editName)
+                            Toast.makeText(
+                                context,
+                                if (isBn) "নাম আপডেট হয়েছে" else "Name updated",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(if (isBn) "নাম সেভ করুন" else "Save Name")
+                    }
+                }
+            }
+        }
+
+        // Subscription & Daily Usage Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = if (isBn) "সাবস্ক্রিপশন ও আজকের ব্যবহার" else "Plan & Daily Usage",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = if (planState.isEffectivePro) {
+                        if (isBn) "আজকের গণনা: ${planState.todayUsedCount} (আনলিমিটেড প্রো)" else "Today's count: ${planState.todayUsedCount} (Unlimited PRO)"
+                    } else {
+                        if (isBn) "আজকের ফ্রি লিমিট: ${planState.todayUsedCount} / ${planState.freeDailyLimit}" else "Today's Free Limit: ${planState.todayUsedCount} / ${planState.freeDailyLimit}"
+                    },
+                    style = MaterialTheme.typography.bodyLarge
+                )
+
+                if (!planState.isEffectivePro) {
+                    Button(
+                        onClick = onNavigateToPaywall,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
+                    ) {
+                        Text(
+                            text = if (isBn) "ONTIK PRO-তে আপগ্রেড করুন" else "Upgrade to ONTIK PRO",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { viewModel.openManageSubscription(context) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(if (isBn) "গুগল প্লে সাবস্ক্রিপশন ম্যানেজ করুন" else "Manage Subscription in Google Play")
+                    }
+                }
+            }
+        }
+
+        // Account Security: Change Password, Logout, Delete Account
+        if (!user.isGuest) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (!user.isGoogleAccount) {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.sendPasswordResetEmail(user.email) { _, msg ->
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(if (isBn) "পাসওয়ার্ড পরিবর্তন করুন (Change Password)" else "Change Password via Email")
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { showLogoutDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(if (isBn) "লগআউট করুন (Logout)" else "Logout")
+                    }
+
+                    Button(
+                        onClick = { showDeleteAccountDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = DangerRed)
+                    ) {
+                        Text(
+                            text = if (isBn) "অ্যাকাউন্ট ও সমস্ত ডেটা মুছে ফেলুন (Delete Account)" else "Delete Account & All Cloud Data",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text(if (isBn) "লগআউট করবেন?" else "Confirm Logout") },
+            text = {
+                Text(
+                    if (isBn) "আপনি কি আপনার অ্যাকাউন্ট থেকে লগআউট করতে চান? অফলাইন গণনা সবসময় চালু থাকবে।" else "Are you sure you want to log out? Offline counting remains available."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutDialog = false
+                        viewModel.signOut(onBack)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
+                ) {
+                    Text(if (isBn) "লগআউট" else "Logout")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text(if (isBn) "বাতিল" else "Cancel")
+                }
+            }
+        )
+    }
+
+    if (showDeleteAccountDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAccountDialog = false },
+            title = {
+                Text(
+                    text = if (isBn) "স্থায়ীভাবে অ্যাকাউন্ট মুছে ফেলবেন?" else "Permanently Delete Account?",
+                    color = DangerRed,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = if (isBn) {
+                            "এটি আপনার Firestore ক্লাউড ব্যাকআপ, প্রোফাইল এবং লোকাল হিস্ট্রি চিরতরে মুছে ফেলবে।"
+                        } else {
+                            "This permanently deletes your Firestore cloud backups, user document, Auth account, and local history."
+                        }
+                    )
+                    if (!user.isGoogleAccount) {
+                        OutlinedTextField(
+                            value = reauthPassword,
+                            onValueChange = { reauthPassword = it },
+                            label = { Text(if (isBn) "নিশ্চিত করতে পাসওয়ার্ড দিন" else "Enter current password to confirm") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteAccountAndData(
+                            passwordIfEmail = if (user.isGoogleAccount) null else reauthPassword
+                        ) { ok, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                            if (ok) {
+                                showDeleteAccountDialog = false
+                                onBack()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = DangerRed)
+                ) {
+                    Text(if (isBn) "স্থায়ীভাবে মুছুন" else "Delete Permanently")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAccountDialog = false }) {
+                    Text(if (isBn) "বাতিল" else "Cancel")
+                }
+            }
+        )
+    }
+}

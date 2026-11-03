@@ -1,5 +1,6 @@
 package com.ontik.countai.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -22,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -34,7 +36,9 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,12 +53,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ontik.countai.data.local.CountSessionEntity
 import com.ontik.countai.domain.model.AppLanguage
+import com.ontik.countai.domain.model.GatedFeature
+import com.ontik.countai.domain.model.SyncStatus
+import com.ontik.countai.ui.components.AdMobBannerCard
 import com.ontik.countai.ui.theme.DangerRed
 import com.ontik.countai.ui.theme.OntikAmberAccent
 import com.ontik.countai.ui.theme.OntikAmberDark
@@ -70,14 +79,17 @@ import java.util.Locale
 @Composable
 fun HistoryScreen(
     viewModel: CountViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToPaywall: () -> Unit
 ) {
+    val context = LocalContext.current
     val sessions by viewModel.historySessions.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val planState by viewModel.planState.collectAsState()
     val isBn = settings.language == AppLanguage.BANGLA
 
     var searchQuery by remember { mutableStateOf("") }
-    var dateFilterIndex by remember { mutableIntStateOf(0) } // 0 = All, 1 = Today, 2 = 7 Days, 3 = 100-Test Only
+    var dateFilterIndex by remember { mutableIntStateOf(0) }
     var editingSession by remember { mutableStateOf<CountSessionEntity?>(null) }
 
     val nowMs = System.currentTimeMillis()
@@ -118,9 +130,9 @@ fun HistoryScreen(
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Top Header Bar
+        // Top Header Bar + Sync Now Button
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -141,24 +153,67 @@ fun HistoryScreen(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Text(
-                        text = if (isBn) "ট্যাপ করে নাম/নোট এডিট করুন • CSV এক্সপোর্ট" else "Tap any session to rename/add note • Export CSV",
+                        text = if (planState.isEffectivePro) {
+                            if (isBn) "আনলিমিটেড প্রো হিস্ট্রি ও ক্লাউড সিঙ্ক চালু" else "Unlimited PRO History & Cloud Sync Active"
+                        } else {
+                            if (isBn) "ফ্রি প্ল্যান: সর্বশেষ ${planState.freeHistoryLimit}টি সেশন (প্রো-তে আনলিমিটেড)" else "Free Plan: Latest ${planState.freeHistoryLimit} sessions (Upgrade for unlimited)"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            Row {
-                Button(
-                    onClick = viewModel::exportHistoryCsv,
-                    enabled = sessions.isNotEmpty(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (isBn) "CSV শেয়ার" else "CSV", fontWeight = FontWeight.Bold)
+            IconButton(
+                onClick = {
+                    if (viewModel.canUseFeature(GatedFeature.CLOUD_BACKUP_SYNC)) {
+                        viewModel.triggerManualCloudSync()
+                        Toast.makeText(
+                            context,
+                            if (isBn) "ক্লাউড সিঙ্ক শুরু হয়েছে..." else "Cloud sync started...",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        onNavigateToPaywall()
+                    }
                 }
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = "Sync Now", tint = OntikGreenPrimary)
+            }
+        }
+
+        // Export CSV & Branded PDF Report Buttons (PRO Gated)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Button(
+                onClick = {
+                    viewModel.exportHistoryCsv(onBlockedByFreePlan = onNavigateToPaywall)
+                },
+                modifier = Modifier.weight(1f).height(46.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
+            ) {
+                Icon(Icons.Default.Share, contentDescription = null)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(if (isBn) "CSV শেয়ার (PRO)" else "Export CSV (PRO)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+
+            OutlinedButton(
+                onClick = {
+                    viewModel.exportHistoryPdfReport(onBlockedByFreePlan = onNavigateToPaywall)
+                },
+                modifier = Modifier.weight(1f).height(46.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, OntikGreenPrimary)
+            ) {
+                Text(
+                    text = if (isBn) "PDF রিপোর্ট (PRO)" else "PDF Report (PRO)",
+                    color = OntikGreenPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
             }
         }
 
@@ -170,8 +225,8 @@ fun HistoryScreen(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -206,7 +261,6 @@ fun HistoryScreen(
                     }
                 }
 
-                // Mini 7-Bar Activity Chart
                 WeeklyMiniBarChart(sessions = sessions)
             }
         }
@@ -288,6 +342,9 @@ fun HistoryScreen(
                 }
             }
         }
+
+        // AdMob Banner ONLY on History & Settings for Free users (never on Camera screen)
+        AdMobBannerCard(isVisible = !viewModel.canUseFeature(GatedFeature.AD_FREE))
     }
 
     // Rename / Add Note Dialog
@@ -363,7 +420,7 @@ private fun WeeklyMiniBarChart(sessions: List<CountSessionEntity>) {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp)
+            .height(48.dp)
     ) {
         val barCount = 7
         val spacing = 12.dp.toPx()
@@ -394,6 +451,13 @@ private fun SessionCardItem(
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
+    val (syncLabel, syncColor) = when (session.syncStatus) {
+        SyncStatus.SYNCED.name -> (if (isBn) "সিঙ্কড ✓" else "Synced ✓") to OntikGreenPrimary
+        SyncStatus.PENDING_UPLOAD.name -> (if (isBn) "পেন্ডিং..." else "Pending") to OntikAmberDark
+        SyncStatus.FAILED.name -> (if (isBn) "ব্যর্থ !" else "Sync Failed") to DangerRed
+        else -> (if (isBn) "লোকাল" else "Local") to Color.Gray
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -405,14 +469,14 @@ private fun SessionCardItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
                         text = session.label,
@@ -420,6 +484,18 @@ private fun SessionCardItem(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    Surface(
+                        color = syncColor.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = syncLabel,
+                            color = syncColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                     if (session.isTestModeSession) {
                         Card(
                             shape = RoundedCornerShape(6.dp),
@@ -428,7 +504,7 @@ private fun SessionCardItem(
                             Text(
                                 text = "Err ${String.format(Locale.US, "%.1f%%", session.accuracyErrorPercent)}",
                                 color = OntikAmberDark,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )

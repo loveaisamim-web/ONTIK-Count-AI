@@ -14,6 +14,8 @@ import com.ontik.countai.domain.model.GrainPreset
 import com.ontik.countai.domain.model.NormalizedRect
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
 
 private val Context.dataStore by preferencesDataStore(name = "ontik_opencv_settings")
 
@@ -41,12 +43,20 @@ data class AppSettings(
     val showTrackIds: Boolean = false,
     val showDebugMask: Boolean = false,
     val onboardingCompleted: Boolean = false,
+    val analyticsConsentAsked: Boolean = false,
+    val analyticsConsentGranted: Boolean = false,
+    val targetCountGoal: Int = 0,
+    val batchModeEnabled: Boolean = false,
+    val completedSessionsCountForReview: Int = 0,
     val roiRect: NormalizedRect = NormalizedRect(0.10f, 0.16f, 0.90f, 0.82f),
     val lineAPosition: Float = 0.50f,
     val lineBPosition: Float = 0.68f
 )
 
-class SettingsRepository(private val context: Context) {
+@Singleton
+class SettingsRepository @Inject constructor(
+    private val context: Context
+) {
 
     private object Keys {
         val LANGUAGE = stringPreferencesKey("language")
@@ -72,6 +82,11 @@ class SettingsRepository(private val context: Context) {
         val SHOW_TRACK_IDS = booleanPreferencesKey("show_track_ids")
         val SHOW_DEBUG_MASK = booleanPreferencesKey("show_debug_mask")
         val ONBOARDING_DONE = booleanPreferencesKey("onboarding_done")
+        val ANALYTICS_ASKED = booleanPreferencesKey("analytics_asked")
+        val ANALYTICS_GRANTED = booleanPreferencesKey("analytics_granted")
+        val TARGET_COUNT_GOAL = intPreferencesKey("target_count_goal")
+        val BATCH_MODE = booleanPreferencesKey("batch_mode_enabled")
+        val COMPLETED_SESSIONS_COUNT = intPreferencesKey("completed_sessions_count")
         val ROI_LEFT = floatPreferencesKey("roi_left")
         val ROI_TOP = floatPreferencesKey("roi_top")
         val ROI_RIGHT = floatPreferencesKey("roi_right")
@@ -79,7 +94,6 @@ class SettingsRepository(private val context: Context) {
         val LINE_A_POS = floatPreferencesKey("line_a_pos")
         val LINE_B_POS = floatPreferencesKey("line_b_pos")
 
-        // Saved custom user preset values
         val CUSTOM_SENS = floatPreferencesKey("custom_sens")
         val CUSTOM_MIN_AREA = intPreferencesKey("custom_min_area")
         val CUSTOM_MAX_AREA = intPreferencesKey("custom_max_area")
@@ -129,6 +143,11 @@ class SettingsRepository(private val context: Context) {
             showTrackIds = prefs[Keys.SHOW_TRACK_IDS] ?: false,
             showDebugMask = prefs[Keys.SHOW_DEBUG_MASK] ?: false,
             onboardingCompleted = prefs[Keys.ONBOARDING_DONE] ?: false,
+            analyticsConsentAsked = prefs[Keys.ANALYTICS_ASKED] ?: false,
+            analyticsConsentGranted = prefs[Keys.ANALYTICS_GRANTED] ?: false,
+            targetCountGoal = (prefs[Keys.TARGET_COUNT_GOAL] ?: 0).coerceAtLeast(0),
+            batchModeEnabled = prefs[Keys.BATCH_MODE] ?: false,
+            completedSessionsCountForReview = prefs[Keys.COMPLETED_SESSIONS_COUNT] ?: 0,
             roiRect = NormalizedRect(left, top, right, bottom),
             lineAPosition = (prefs[Keys.LINE_A_POS] ?: 0.50f).coerceIn(0.10f, 0.90f),
             lineBPosition = (prefs[Keys.LINE_B_POS] ?: 0.68f).coerceIn(0.15f, 0.92f)
@@ -258,6 +277,30 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setOnboardingCompleted() {
         context.dataStore.edit { it[Keys.ONBOARDING_DONE] = true }
+    }
+
+    suspend fun setAnalyticsConsent(granted: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.ANALYTICS_ASKED] = true
+            prefs[Keys.ANALYTICS_GRANTED] = granted
+        }
+    }
+
+    suspend fun updateTargetCountGoal(goal: Int) {
+        context.dataStore.edit { it[Keys.TARGET_COUNT_GOAL] = goal.coerceIn(0, 100000) }
+    }
+
+    suspend fun updateBatchMode(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.BATCH_MODE] = enabled }
+    }
+
+    suspend fun incrementCompletedSessions(): Int {
+        var updated = 1
+        context.dataStore.edit { prefs ->
+            updated = (prefs[Keys.COMPLETED_SESSIONS_COUNT] ?: 0) + 1
+            prefs[Keys.COMPLETED_SESSIONS_COUNT] = updated
+        }
+        return updated
     }
 
     suspend fun updateRoiAndLines(roi: NormalizedRect, lineA: Float, lineB: Float) {

@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Ensure client CANNOT create or modify server-controlled billing fields:
+    // 'plan', 'proExpiresAt', 'proSource' can ONLY be written by Admin SDK (Cloud Function / RevenueCat Webhook).
+    function doesNotTouchProtectedPlanFields() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['plan', 'proExpiresAt', 'proSource']);
+    }
+
+    function isValidInitialUserCreate() {
+      let data = request.resource.data;
+      return (!('plan' in data) || data.plan == 'free')
+        && !('proExpiresAt' in data)
+        && !('proSource' in data)
+        && data.name is string && data.name.size() <= 100
+        && data.email is string && data.email.size() <= 180
+        && (!('deviceIds' in data) || (data.deviceIds is list && data.deviceIds.size() <= 3));
+    }
+
+    function isValidUserUpdate() {
+      let data = request.resource.data;
+      return doesNotTouchProtectedPlanFields()
+        && (!('name' in data) || (data.name is string && data.name.size() <= 100))
+        && (!('language' in data) || (data.language in ['bn', 'en']))
+        && (!('deviceIds' in data) || (data.deviceIds is list && data.deviceIds.size() <= 3))
+        && (!('dailyCount' in data) || (
+             data.dailyCount is map &&
+             data.dailyCount.date is string &&
+             data.dailyCount.date.size() == 10 &&
+             data.dailyCount.count is int &&
+             data.dailyCount.count >= 0
+           ));
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && isValidInitialUserCreate();
+      allow update: if isOwner(uid) && isValidUserUpdate();
+      allow delete: if isOwner(uid);
+
+      // Subcollection: users/{uid}/sessions/{sessionId}
+      match /sessions/{sessionId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && request.resource.data.count is int
+          && request.resource.data.count >= 0
+          && request.resource.data.label is string
+          && request.resource.data.label.size() <= 120
+          && request.resource.data.preset is string
+          && request.resource.data.preset.size() <= 60
+          && request.resource.data.durationSec is int
+          && request.resource.data.deleted is bool
+          && request.resource.data.updatedAt is int;
+        allow delete: if isOwner(uid);
+      }
+
+      // Subcollection: users/{uid}/presets/{presetId}
+      match /presets/{presetId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 80
+          && request.resource.data.sensitivity is number
+          && request.resource.data.minAreaPx is int
+          && request.resource.data.maxAreaPx is int;
+        allow delete: if isOwner(uid);
+      }
+    }
+
+    // Deny everything else by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
