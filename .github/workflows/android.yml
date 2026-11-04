@@ -16,6 +16,67 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Ensure Permanent Keystore Exists for V1+V2 APK Signing
+        run: |
+          python3 -c '
+          import base64, os
+          jks_b64 = (
+              "MIIKugIBAzCCCmQGCSqGSIb3DQEHAaCCClUEggpRMIIKTTCCBbQGCSqGSIb3DQEHAaCCBaUEggWh"
+              "MIIFnTCCBZkGCyqGSIb3DQEMCgECoIIFQDCCBTwwZgYJKoZIhvcNAQUNMFkwOAYJKoZIhvcNAQUM"
+              "MCsEFP0R2HQESZTJP1N/1QWYwkw/4+5DAgInEAIBIDAMBggqhkiG9w0CCQUAMB0GCWCGSAFlAwQB"
+              "KgQQ1LaPWUPdgg02cKh6QlfJSASCBNAs3O3QfSeVdVc71NLmVeIB5HPUr9xu2xzlk957s6EMD9g/"
+              "lt1rVhw7JVMMzzqsvvCvq4fHBQSKh4kbr+3tMK5NbqMiau8eZJh/XBjKoYAv+fmATIVlsCzrj39r"
+              "KYLKsIny47lROulaOkWHpK93hqgkk656EC4aej0ta77vgD8GkmYuFBvSQTneX7PoJAGkkua9gUWn"
+              "TaZwyNVZOEIz73d629HkeXkbQEamg/bnQzHqj1zXev1n0TN3cmHeOYGc0R1B7PBfvvgSIbinJXOS"
+              "fJHXLMt6lqytw32C94re9EkEDvlFjMFaSV8UxmeKNllamsW7bqVZH84PXsQZWTxUUnPiZF7L8mHU"
+              "rgBnnBn5LL/zpX58/MZ//elv0dgOfSSyrZ8+T8v1kYeGqCn1xFOOyEpeKJ/dplnhiUxmwNGl2eNT"
+              "zRCGombnOWX5PzYDSiIbqr2EkdYPZKqJJCZM2NOLlNMHA3JTOKktmDAOlOtecz8t/qel1MhuxlcD"
+              "xpv12egEOQPqUtgHVBgd92XzqeFxEBjiOqZIraUgFNZ+m189ydt1ftR96RH1F28buHJy37i/jqSj"
+              "N/cf3+n8B7+FS2hgE/3ZZv2LUCaFnypAI8Y72DsG/g1oQSkAbsuYOp1TEGFUHbo21lntJ5KZQMZP"
+              "EdEz0hbbIjccw/VOniHFdVwW4EnBwlQ9b+N6yIAngqNBk71LmUYMiRv2MYH1C6PzIZZENwOFhJM+"
+              "nJInQGHSx8HGqNwKxYHhT73kdRNL+hDNdNB3ZuarK03qrGvRSQwbr33uF3JfoIZg+zfj3a34sXD4"
+              "uUQ6Ml9AAi+yQd/wvIQrBuejAezM6yGBz6TDyIFK2W+J6r6EcBAh5M1szhB6pflLK706ILhDBArP"
+              "wrb75g8edfaibymmG09eDLZnESCRV9Xf40WyCfxAZYjkoixOG83wrNe9WdvIQL40umyoW6qba/rb"
+              "OYY7rsfeWeAJAm2blrlseQsDbEk36PLV2Ln7+8PhPUBQIgv9sNCv7Wm4mH/QQKqAN5MZbzMsD/hi"
+              "ZwcMO3d/18zxggK8Y+YsAYu2dsu4Ub1ICZ7SGTPua14U3dJEXHlfUTwoqWCtMzGopIVDVyiqyuWO"
+              "ISvwVhNU3gCBqgv26vzfvd0wKvk/5uAJMLskdsEXBknUC7nMVTsNAgd5mpmm55M3R2eB2xHJLehU"
+              "4Xb26BCC+32cYEtaISwaxqpbpg5eavaMfnl4ZPHwXbUap/M5mSUIoS9i0yhcGLJWqjw/ppP/HWcy"
+              "+cpjk8HZm0Zx0fILjT9IYHtp5p0GZk9RXRcAG8OJGPI/wfJdo/ORJ3KeqBBrFpyoZai6Q0OGGsst"
+              "nYsXMgfZ98nuKDfzW9t7cCEiBlJB6134yNqVbFZT5k4Yk4ltn3Vsr0yowfcNB5WXPcSGOSCKq8GB"
+              "Rxr0PXCEjiZgeoNQi3L+LAAMkHonftacHwx93td99y2c7GZwV3uinDfeKcDdS2zUmNdH0BM0gXEL"
+              "ULI2aXN+y3+OfHFbprmg0IzSyu8056JvN1Oq/OEa3LcO1S4uS1C7kCZTrx3LonDwSIYrya/8nIwv"
+              "u4t6CJ0tik5C4F7oHNJXhmgOqx2yQMj0F83ZaVzQHn3sTV5yOW8fQOBn5d+40YBw06gG9Wxp+6N1"
+              "yzFGMCEGCSqGSIb3DQEJFDEUHhIAbwBuAHQAaQBrAF8AawBlAHkwIQYJKoZIhvcNAQkVMRQEElRp"
+              "bWUgMTc5MzczOTM3MTM2NjCCBJEGCSqGSIb3DQEHBqCCBIIwggR+AgEAMIIEdwYJKoZIhvcNAQcB"
+              "MGYGCSqGSIb3DQEFDTBZMDgGCSqGSIb3DQEFDDArBBSSAcmL/PRUcYaIHeSTU/tlPx/tBgICJxAC"
+              "ASAwDAYIKoZIhvcNAgkFADAdBglghkgBZQMEASoEEKvpONYrd+PzbayVrWT0+gGAggQAuxDiZ8Ua"
+              "11Tkrn/GwTK3Xuu2jH/PtSaaXjJGD6WEK/ArqsCFlWH8fKu3SLuhO1tIslp72OAv77w8H3UB9IPK"
+              "J6dzlVcBOnNJ4L6W3+1JE2OxNiHxcevQfCWocAdA/WxYinHjuQCoQMnUkigIfh48avyg37GRTVWF"
+              "nFJn9aCKKdIyM071tuXJiGW9R8AagyAdJa4SPpOgw0agJvkrhavFV5ynSS8WAZ3+QakKn1Lh2jfk"
+              "hoT9vYAB9Zc92eTQjZTeqQ/jsqMG/ldZ0bTXTlZJlKc8JafjixLItNxhnGt35wSFra+xhW20BWVS"
+              "Ab61pO1RR1+232qUBKl02Jyr4/+AYHtumNMHm415+CmW/aXUF28g4i9/2z9KS2iPZZwCvYAk4ALD"
+              "+Y5nDMSzS0+6rzQMgUm/2JQB3AaXeGbFN5mv2+feDZP+4Uq51Q3IZStXnvgaf6oiRW+QiETUopRz"
+              "7U/X/jBnJ1O7++4khDN/MaKbnN0Pv+dqtsOn7bsNHH8JkRClf7Z3fKhsnAkaOU9aWfge5UlHNJWt"
+              "aMY2Bp/qcx35NS7id5kcmG+KE9deiACUhs4EHm3moYSkKlApwWq0R03J8X3Y1HsmriEzOUJ9oTbs"
+              "8PS7gwdSzVrur4t0h/W85T3XLhuMwjsqHyoCHs5UJF3IYD4QTXFsv0iAEwP8l+Z7+bIfEUZQahbH"
+              "HK3++sxo9H+9KLv1rvuXbxnYA9sMSg1TlzRsDTZnwql9AiuhPGbq+ctCl7zJFHd4gEXKLPyDEX9W"
+              "oiGo2FMqwNZZqX+NSXO32GidWEknhI2Ezzev79AGXzDLzmprHxMJnIspmXbaUbXOr9+9BvLehYy7"
+              "mDHa/MpuD/gAjlg9YA6L1u097dOey9NPcgFvCnU0tcu/vYwSbKy772X5VbHbSVIAAczOdjjJ1f1i"
+              "WUWii9o6hAyTnLvIu+36PKDS0ScKGeLUjZmV9k92fcWzpBfbzseEXwzq3PVY4508dvbCga9NnWBW"
+              "4v+cEk1agd95TU+iwICf8NjhqWE4kqiJR39i6DJdzlv5WK5K+KQ5zDnF9HJUsVdhWCGPHUgnBrNj"
+              "lgCOh/v2qlmq4aHcOHX4fJ68lXugReAftqQa6k3G1S9OxZ6P7Y896wWjtplJzZhZoHhqJM7auWMU"
+              "NTEPDWdzSnsgmPhZIp66hUT8FPynl3tokdWJObBAvixN4KLf3NE13rgG8TTSowVQzMk5MWiNQ8gw"
+              "zzU0vCaPZXTHYg6VSUebJBASKRXjEsKHpRWZL3y0SY+NRfjJITINPFullVwPwXRPrCFonxQ1sf1A"
+              "SyEOazxSqTiUg5UZQMM8BpCT/gMUnfKsVRWyuYoZIohnhzR+3uw3TADc5egLYB92MjBNMDEwDQYJ"
+              "YIZIAWUDBAIBBQAEIAwv5MtGqQm1EhaXE4gVLmfK8G4i02Ly23iCpeaNwxDsBBQyl0fvUbE4idi0"
+              "UnV8ivPpSMpGFgICJxA="
+          )
+          os.makedirs("app", exist_ok=True)
+          with open("app/ontik-release-key.jks", "wb") as f:
+              f.write(base64.b64decode(jks_b64))
+          print("Verified app/ontik-release-key.jks size:", os.path.getsize("app/ontik-release-key.jks"))
+          '
+
       - name: Ensure google-services.json exists for google-services plugin
         run: |
           if [ ! -f app/google-services.json ]; then
@@ -82,10 +143,11 @@ jobs:
         run: |
           gradle assembleDebug --stacktrace --no-daemon
 
-      - name: Verify Built APK Exists
+      - name: Verify Built APK Exists and is Signed
         run: |
           ls -lh app/build/outputs/apk/debug/
           test -f app/build/outputs/apk/debug/app-debug.apk
+          jarsigner -verify app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4

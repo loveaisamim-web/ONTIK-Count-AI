@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -22,8 +23,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -46,16 +45,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.ontik.countai.BuildConfig
 import com.ontik.countai.domain.model.AppLanguage
 import com.ontik.countai.domain.model.AppThemeMode
 import com.ontik.countai.domain.model.CountingDirection
-import com.ontik.countai.domain.model.GatedFeature
 import com.ontik.countai.domain.model.GrainPreset
 import com.ontik.countai.ui.components.AdMobBannerCard
-import com.ontik.countai.ui.theme.OntikAmberAccent
+import com.ontik.countai.ui.theme.DangerRed
 import com.ontik.countai.ui.theme.OntikGreenPrimary
 import com.ontik.countai.ui.viewmodel.CountViewModel
+import kotlin.math.roundToInt
 
+/**
+ * Clean, human-friendly Settings screen with zero confusing technical jargon and no PRO locks.
+ * Shows the AdMob Banner at the bottom to generate ad revenue.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
@@ -68,8 +73,6 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val settings by viewModel.settings.collectAsState()
-    val uiState by viewModel.uiState.collectAsState()
-    val planState by viewModel.planState.collectAsState()
     val lang = settings.language
     val isBn = lang == AppLanguage.BANGLA
 
@@ -83,7 +86,7 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Top Bar with Profile & Upgrade Buttons
+        // Top Header Bar
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -99,12 +102,13 @@ fun SettingsScreen(
                 }
                 Column {
                     Text(
-                        text = if (isBn) "সেটিংস ও ওপেনসিভি টিউনিং" else "Settings & OpenCV Tuning",
+                        text = if (isBn) "সেটিংস (Settings)" else "Settings",
                         style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onBackground
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = if (isBn) "প্রিসেট, টার্গেট অ্যালার্ম, ব্যাচ মোড ও অ্যাকাউন্ট" else "Presets, Target Alarm, Batch Mode & Account",
+                        text = if (isBn) "ভাষা, শস্যের ধরন, সেনসিটিভিটি ও শব্দ" else "Language, Grain Type, Sensitivity & Sound",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -116,39 +120,11 @@ fun SettingsScreen(
             }
         }
 
-        // Account & PRO Upgrade Banner Card
-        if (!planState.isEffectivePro) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onNavigateToPaywall() },
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = OntikGreenPrimary),
-                border = BorderStroke(1.dp, OntikAmberAccent)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (isBn) "ONTIK PRO আনলক করুন" else "Upgrade to ONTIK PRO",
-                            color = OntikAmberAccent,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            text = if (isBn) "আনলিমিটেড গণনা, PDF রিপোর্ট, ক্লাউড ব্যাকআপ ও কাস্টম প্রিসেট" else "Unlimited daily counting, PDF report, Cloud Sync & Custom Presets",
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
-        }
-
         // Card 1: Language & Theme
-        SettingsCard(title = if (isBn) "ভাষা ও থিম (Language & Theme)" else "Language & Theme") {
+        SettingsCard(
+            title = if (isBn) "১. ভাষা ও থিম (Language & Theme)" else "1. Language & Theme",
+            subtitle = if (isBn) "অ্যাপের ভাষা (বাংলা / English) এবং কালার থিম নির্বাচন করুন" else "Choose your preferred language and display theme"
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -186,10 +162,95 @@ fun SettingsScreen(
             }
         }
 
-        // Card 2: Target Count Alarm & Batch Mode (Phase 6.1 & 6.4)
+        // Card 2: Select Grain / Seed Type
         SettingsCard(
-            title = if (isBn) "টার্গেট অ্যালার্ম ও ব্যাচ মোড (PRO)" else "Target Count Alarm & Batch Mode",
-            subtitle = if (isBn) "নির্দিষ্ট সংখ্যক দানা পূর্ণ হলে অটো-পজ ও অ্যালার্ম বাজবে" else "Auto-pause and play alarm when target grain count is reached"
+            title = if (isBn) "২. আপনি কী গুনতে চান? (Select Item)" else "2. What Are You Counting?",
+            subtitle = if (isBn) "যেটি গুনবেন তার ওপর ট্যাপ করলে আকার স্বয়ংক্রিয়ভাবে সেট হয়ে যাবে" else "Tap the item type to automatically configure detection size"
+        ) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                GrainPreset.entries.filter { it != GrainPreset.CUSTOM }.forEach { preset ->
+                    FilterChip(
+                        selected = settings.activePreset == preset,
+                        onClick = {
+                            viewModel.applyPreset(preset = preset)
+                            Toast.makeText(
+                                context,
+                                if (isBn) "${preset.nameBn} সেট করা হয়েছে" else "${preset.nameEn} selected",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        label = { Text(preset.title(lang)) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = OntikGreenPrimary,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    )
+                }
+            }
+        }
+
+        // Card 3: Detection Sensitivity & Counting Direction
+        SettingsCard(
+            title = if (isBn) "৩. শনাক্তকরণ ক্ষমতা ও দিক (Sensitivity & Direction)" else "3. Detection Sensitivity & Direction",
+            subtitle = if (isBn) "সাদা কাগজে হালকা দানার জন্য সেনসিটিভিটি বাড়ান; দাগ বা ছায়া এড়াতে কমান" else "Increase for light grains on white paper; decrease to ignore surface marks"
+        ) {
+            val sensPercent = (settings.sensitivity * 100).roundToInt()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = if (isBn) "সেনসিটিভিটি (Sensitivity)" else "Sensitivity",
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "$sensPercent%",
+                    color = OntikGreenPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Slider(
+                value = settings.sensitivity,
+                onValueChange = viewModel::updateSensitivity,
+                valueRange = 0.15f..0.85f,
+                colors = SliderDefaults.colors(
+                    thumbColor = OntikGreenPrimary,
+                    activeTrackColor = OntikGreenPrimary
+                )
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = if (isBn) "দানা কোন দিক থেকে কোন দিকে যাবে?" else "Counting Direction Across Line",
+                fontWeight = FontWeight.SemiBold
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                CountingDirection.entries.forEach { dir ->
+                    FilterChip(
+                        selected = settings.countingDirection == dir,
+                        onClick = { viewModel.updateDirection(dir) },
+                        label = { Text(dir.title(lang)) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = OntikGreenPrimary,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    )
+                }
+            }
+        }
+
+        // Card 4: Target Alarm, Batch Mode & Sound/Vibration
+        SettingsCard(
+            title = if (isBn) "৪. টার্গেট অ্যালার্ম, ব্যাচ ও শব্দ (Alarm & Sound)" else "4. Target Alarm, Batch & Sound",
+            subtitle = if (isBn) "নির্দিষ্ট সংখ্যা পূর্ণ হলে অ্যালার্ম বাজবে ও গণনা থামবে" else "Auto-pause and play chime when target count is reached"
         ) {
             val targetGoals = listOf(0, 50, 100, 250, 500, 1000)
             FlowRow(
@@ -200,13 +261,7 @@ fun SettingsScreen(
                     val label = if (g == 0) (if (isBn) "অফ (Off)" else "Off") else "$g"
                     FilterChip(
                         selected = settings.targetCountGoal == g,
-                        onClick = {
-                            if (g > 0 && !viewModel.canUseFeature(GatedFeature.TARGET_COUNT_ALARM)) {
-                                onNavigateToPaywall()
-                            } else {
-                                viewModel.updateTargetCountGoal(g)
-                            }
-                        },
+                        onClick = { viewModel.updateTargetCountGoal(g) },
                         label = { Text(label) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = OntikGreenPrimary,
@@ -217,279 +272,102 @@ fun SettingsScreen(
             }
 
             SettingToggleRow(
-                title = if (isBn) "ব্যাচ মোড চালু করুন (Batch Mode)" else "Enable Multi-Batch Counting Mode",
-                subtitle = if (isBn) "একাধিক ব্যাচের সাবটোটাল ও সর্বমোট (Grand Total) হিসাব রাখবে" else "Count multiple batches with subtotals and grand total",
+                title = if (isBn) "ব্যাচ মোড (Batch Counting)" else "Multi-Batch Counting Mode",
+                subtitle = if (isBn) "একাধিক ব্যাচ আলাদাভাবে যোগ করে সর্বমোট হিসাব রাখবে" else "Track multiple batch subtotals and grand total",
                 checked = settings.batchModeEnabled,
                 onCheckedChange = viewModel::updateBatchMode
             )
-        }
-
-        // Card 3: Grain Presets (Built-in allowed for Free; Custom Preset gated for Pro)
-        SettingsCard(
-            title = if (isBn) "শস্য ও বীজের প্রিসেট (Grain Presets)" else "Grain & Seed Presets",
-            subtitle = if (isBn) "যেকোনো একটি সিলেক্ট করলে সেটির আকার অনুযায়ী সব স্লাইডার অটো-সেট হয়ে যাবে" else "Selecting a preset configures area limits, morphology, sensitivity & tracking"
-        ) {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                GrainPreset.entries.forEach { preset ->
-                    FilterChip(
-                        selected = settings.activePreset == preset,
-                        onClick = {
-                            viewModel.applyPreset(
-                                preset = preset,
-                                onBlockedCustomPreset = onNavigateToPaywall
-                            )
-                        },
-                        label = { Text(preset.title(lang)) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = OntikGreenPrimary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    )
-                }
-            }
-
-            OutlinedButton(
-                onClick = {
-                    viewModel.saveCustomPreset(onBlockedByFreePlan = onNavigateToPaywall)
-                    if (viewModel.canUseFeature(GatedFeature.CUSTOM_PRESETS)) {
-                        Toast.makeText(
-                            context,
-                            if (isBn) "কাস্টম প্রিসেট সেভ হয়েছে!" else "Saved to Custom Preset!",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, OntikGreenPrimary)
-            ) {
-                Text(
-                    text = if (isBn) "বর্তমান সেটিংস 'আমার কাস্টম প্রিসেট'-এ সেভ করুন (PRO)" else "Save Current Parameters as My Custom Preset (PRO)",
-                    color = OntikGreenPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-
-        // Card 4: Count Direction & Verification Line B
-        SettingsCard(
-            title = if (isBn) "গণনার দিক (Count Direction)" else "Count Direction & Verification Line"
-        ) {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                CountingDirection.entries.forEach { dir ->
-                    FilterChip(
-                        selected = settings.countingDirection == dir,
-                        onClick = { viewModel.updateDirection(dir) },
-                        label = { Text(dir.chip(lang)) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = OntikGreenPrimary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    )
-                }
-            }
 
             SettingToggleRow(
-                title = if (isBn) "দ্বিতীয় ভেরিফিকেশন লাইন (Line B)" else "Second Verification Line (Line B)",
-                subtitle = if (isBn) "লাইন A ও B এর গণনা না মিললে সতর্কবার্তা দেখাবে" else "Warns if grains crossing Line B differ from Line A",
-                checked = settings.enableVerificationLineB,
-                onCheckedChange = viewModel::updateVerificationLineB
-            )
-        }
-
-        // Card 5: Single-Grain Size & OpenCV Sliders
-        SettingsCard(
-            title = if (isBn) "ওপেনসিভি সেন্সিটিভিটি ও ট্র্যাকিং স্লাইডার" else "OpenCV Sensitivity, Area & Tracking Sliders"
-        ) {
-            SettingToggleRow(
-                title = if (isBn) "স্বয়ংক্রিয় দানার আকার (Auto Running Median)" else "Auto-Learn Single-Grain Size",
-                subtitle = if (isBn) "বর্তমান শেখা আকার: ${uiState.learnedSingleGrainAreaPx.toInt()} px²" else "Learned median area: ${uiState.learnedSingleGrainAreaPx.toInt()} px²",
-                checked = settings.autoSingleGrainSize,
-                onCheckedChange = viewModel::updateAutoSingleGrainSize
-            )
-
-            if (!settings.autoSingleGrainSize) {
-                SliderWithHelp(
-                    title = if (isBn) "ম্যানুয়াল একক দানার আকার: ${settings.manualSingleGrainAreaPx.toInt()} px²" else "Manual Single-Grain Area: ${settings.manualSingleGrainAreaPx.toInt()} px²",
-                    help = if (isBn) "কম রাখলে জোড়া লাগা দানা বেশি ভাগ হবে" else "Lower value splits touching blobs into more grains",
-                    value = settings.manualSingleGrainAreaPx,
-                    valueRange = 15f..1200f,
-                    onValueChange = viewModel::updateManualSingleGrainArea
-                )
-            }
-
-            SliderWithHelp(
-                title = if (isBn) "সেন্সিটিভিটি (Sensitivity): ${(settings.sensitivity * 100).toInt()}%" else "Sensitivity: ${(settings.sensitivity * 100).toInt()}%",
-                help = if (isBn) "দানা মিস হলে বাড়ান; ছায়া বা ধুলো গুনলে কমান" else "Increase if pale grains are missed; decrease if background noise appears",
-                value = settings.sensitivity,
-                valueRange = 0.15f..0.90f,
-                onValueChange = viewModel::updateSensitivity
-            )
-
-            SliderWithHelp(
-                title = if (isBn) "সর্বনিম্ন আকার (Min Area): ${settings.minAreaPx} px²" else "Minimum Grain Area: ${settings.minAreaPx} px²",
-                help = if (isBn) "এর চেয়ে ছোট ধুলোবালি বাদ যাবে" else "Rejects tiny dust specs smaller than this pixel area",
-                value = settings.minAreaPx.toFloat(),
-                valueRange = 4f..250f,
-                onValueChange = { viewModel.updateMinArea(it.toInt()) }
-            )
-
-            SliderWithHelp(
-                title = if (isBn) "সর্বোচ্চ আকার (Max Area): ${settings.maxAreaPx} px²" else "Maximum Blob Area: ${settings.maxAreaPx} px²",
-                help = if (isBn) "হাত বা বিশাল ছায়া বাদ দেওয়ার সীমা" else "Rejects hands or large foreign objects above this area",
-                value = settings.maxAreaPx.toFloat(),
-                valueRange = 500f..25000f,
-                onValueChange = { viewModel.updateMaxArea(it.toInt()) }
-            )
-
-            SliderWithHelp(
-                title = if (isBn) "ট্র্যাকিং দূরত্ব (Tracking Gate): ${(settings.trackingDistanceNormalized * 100).toInt()}%" else "Tracking Distance Gate: ${(settings.trackingDistanceNormalized * 100).toInt()}%",
-                help = if (isBn) "দানা খুব দ্রুত পড়লে বাড়ান" else "Increase for fast-falling grains",
-                value = settings.trackingDistanceNormalized,
-                valueRange = 0.06f..0.32f,
-                onValueChange = viewModel::updateTrackingDistance
-            )
-
-            SliderWithHelp(
-                title = if (isBn) "লাইন হিস্টেরেসিস (Line Hysteresis): ${String.format(java.util.Locale.US, "%.1f%%", settings.lineHysteresisNormalized * 100)}" else "Line Hysteresis Band: ${String.format(java.util.Locale.US, "%.1f%%", settings.lineHysteresisNormalized * 100)}",
-                help = if (isBn) "দাগের ওপর স্থির থাকা দানা ডাবল গোনা রোধ করে" else "Prevents jitter double-counts right on the counting line",
-                value = settings.lineHysteresisNormalized,
-                valueRange = 0.005f..0.045f,
-                onValueChange = viewModel::updateLineHysteresis
-            )
-
-            SliderWithHelp(
-                title = if (isBn) "মরফোলজি কার্নেল (Morphology Kernel): ${settings.morphKernelSize}x${settings.morphKernelSize}" else "Morphology Strength: ${settings.morphKernelSize}x${settings.morphKernelSize} px",
-                help = if (isBn) "ছোট বীজের জন্য 3x3 এবং বড় বাদাম/ট্যাবলেটের জন্য 5x5" else "3x3 for tiny seeds/rice; 5x5 or 7x7 for large beans/tablets",
-                value = settings.morphKernelSize.toFloat(),
-                valueRange = 3f..7f,
-                onValueChange = { viewModel.updateMorphKernel(it.toInt()) }
-            )
-        }
-
-        // Card 6: Camera, Feedback, Privacy Consent & Support
-        SettingsCard(
-            title = if (isBn) "ক্যামেরা, ফিডব্যাক ও গোপনীয়তা" else "Camera, Feedback & Privacy"
-        ) {
-            SettingToggleRow(
-                title = if (isBn) "ক্যালিব্রেশনের পর AE/AWB লক করুন" else "Lock Exposure & White Balance After Calibration",
-                subtitle = if (isBn) "হাতের ছায়ায় আলো ওঠানামা রোধ করে" else "Prevents auto-exposure flicker while dropping grains",
-                checked = settings.lockCameraExposureFocus,
-                onCheckedChange = viewModel::updateLockCamera
-            )
-
-            SettingToggleRow(
-                title = if (isBn) "উচ্চ ফ্রেম রেট (Target 60 FPS)" else "High Frame Rate Mode (Target 60 FPS)",
-                subtitle = if (isBn) "দ্রুত পড়ন্ত দানার জন্য" else "Requests 60 FPS via Camera2Interop",
-                checked = settings.targetFps >= 60,
-                onCheckedChange = { viewModel.updateTargetFps(if (it) 60 else 30) }
-            )
-
-            SettingToggleRow(
-                title = if (isBn) "পিছনের ক্যামেরা (Rear Camera)" else "Use Rear Camera",
-                subtitle = if (isBn) "বন্ধ করলে সামনের ক্যামেরা চালু হবে" else "Switch off for front camera",
-                checked = settings.useBackCamera,
-                onCheckedChange = viewModel::updateCameraFacing
-            )
-
-            SettingToggleRow(
-                title = if (isBn) "ভাইব্রেশন (Haptic Tick)" else "Haptic Tick & 100-Grain Milestone",
-                subtitle = if (isBn) "প্রতি গণনায় টিক এবং ১০০ পূর্ণ হলে ভাইব্রেশন" else "Subtle tick per grain + strong pulse every 100 count",
-                checked = settings.hapticEnabled,
-                onCheckedChange = viewModel::updateHaptic
-            )
-
-            SettingToggleRow(
-                title = if (isBn) "সাউন্ড বিপ (Soft Audio Beep)" else "Soft Audio Beep on Count",
-                subtitle = if (isBn) "প্রতি দানা গণনায় হালকা বিপ সাউন্ড" else "Plays short acoustic tick when a grain crosses",
+                title = if (isBn) "গণনার বিপ শব্দ (Sound Beep)" else "Count Tick Sound",
+                subtitle = if (isBn) "দানা দাগ পার হলে টিক শব্দ হবে" else "Play audio beep when a grain is counted",
                 checked = settings.soundBeepEnabled,
                 onCheckedChange = viewModel::updateSoundBeep
             )
 
             SettingToggleRow(
-                title = if (isBn) "স্ক্রিন সবসময় চালু রাখুন (Keep Screen On)" else "Keep Screen On",
-                subtitle = if (isBn) "গণনার সময় ফোনের আলো বন্ধ হবে না" else "Prevents phone from sleeping during counting",
-                checked = settings.keepScreenOn,
-                onCheckedChange = viewModel::updateKeepScreenOn
+                title = if (isBn) "ভাইব্রেশন (Vibration)" else "Haptic Vibration",
+                subtitle = if (isBn) "গণনার সময় হালকা ভাইব্রেট করবে" else "Vibrate gently on count",
+                checked = settings.hapticEnabled,
+                onCheckedChange = viewModel::updateHaptic
             )
 
             SettingToggleRow(
-                title = if (isBn) "ট্র্যাক আইডি দেখান (Show Track IDs)" else "Show Track IDs (#1, #2...)",
-                subtitle = if (isBn) "প্রতিটি দানার সাথে ট্র্যাকিং নম্বর দেখাবে" else "Displays Kalman tracker ID numbers",
+                title = if (isBn) "স্ক্রিন সবসময় চালু রাখুন (Keep Screen On)" else "Keep Screen On",
+                subtitle = if (isBn) "গণনার সময় ফোনের ডিসপ্লে বন্ধ হবে না" else "Prevent screen from sleeping while counting",
+                checked = settings.keepScreenOn,
+                onCheckedChange = viewModel::updateKeepScreenOn
+            )
+        }
+
+        // Card 5: Camera, Debug Mask & Reset to Defaults
+        SettingsCard(
+            title = if (isBn) "৫. ক্যামেরা ও ডিফল্ট রিসেট (Camera & Reset)" else "5. Camera & Reset"
+        ) {
+            SettingToggleRow(
+                title = if (isBn) "ক্যালিব্রেশনের পর ফোকাস ও আলো লক করুন" else "Lock Focus & Exposure After Calibration",
+                subtitle = if (isBn) "নির্ভুল গণনার জন্য এটি চালু রাখা উত্তম" else "Recommended for consistent accuracy",
+                checked = settings.lockCameraExposureFocus,
+                onCheckedChange = viewModel::updateLockCamera
+            )
+
+            SettingToggleRow(
+                title = if (isBn) "ডিবাগ মাস্ক দেখুন (Show Detection Mask)" else "Show OpenCV Binary Mask",
+                subtitle = if (isBn) "ক্যামেরা দানা কীভাবে দেখছে তা সাদা-কালোতে দেখুন" else "Preview the thresholded binary mask inside the ROI box",
+                checked = settings.showDebugMask,
+                onCheckedChange = viewModel::updateShowDebugMask
+            )
+
+            SettingToggleRow(
+                title = if (isBn) "দানার ট্র্যাক নম্বর দেখুন (#ID)" else "Show Track IDs (#1, #2)",
+                subtitle = if (isBn) "প্রতিটি দানার পাশে ট্র্যাকিং নম্বর দেখাবে" else "Display tracking ID next to each grain",
                 checked = settings.showTrackIds,
                 onCheckedChange = viewModel::updateShowTrackIds
             )
 
-            SettingToggleRow(
-                title = if (isBn) "অ্যানালিটিক্স ও ক্র্যাশ ডায়াগনস্টিকস (GDPR Consent)" else "Anonymous Crash & Performance Analytics",
-                subtitle = if (isBn) "অ্যাপের মান উন্নয়নে বেনামী ডায়াগনস্টিকস শেয়ার" else "Share anonymous crash logs to improve stability",
-                checked = settings.analyticsConsentGranted,
-                onCheckedChange = viewModel::setAnalyticsConsent
-            )
-
             OutlinedButton(
-                onClick = { viewModel.sendFeedbackEmail(context) },
+                onClick = {
+                    viewModel.resetSettingsToDefaults()
+                    Toast.makeText(
+                        context,
+                        if (isBn) "সব সেটিংস ডিফল্ট অবস্থায় ফিরিয়ে আনা হয়েছে" else "All settings reset to defaults",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, DangerRed)
             ) {
-                Text(if (isBn) "সমস্যা জানান / ফিডব্যাক পাঠান (Report a Problem)" else "Send Feedback / Report a Problem")
-            }
-
-            OutlinedButton(
-                onClick = viewModel::exportLast10SecondsDebugLog,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text(if (isBn) "শেষ ১০ সেকেন্ডের ডিবাগ লগ শেয়ার (CSV)" else "Export Last 10s Debug Recorder Log")
+                Text(
+                    text = if (isBn) "ডিফল্ট সেটিংসে ফিরে যান (Reset to Defaults)" else "Reset All Settings to Defaults",
+                    color = DangerRed,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onOpenPrivacy) {
-                    Text(if (isBn) "গোপনীয়তা নীতি (Privacy Policy)" else "Privacy Policy")
-                }
-                TextButton(onClick = onOpenTerms) {
-                    Text(if (isBn) "শর্তাবলী (Terms)" else "Terms of Service")
+                Text(
+                    text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TextButton(onClick = onOpenPrivacy) {
+                        Text(if (isBn) "গোপনীয়তা নীতি" else "Privacy Policy", fontSize = 12.sp)
+                    }
+                    TextButton(onClick = onOpenTerms) {
+                        Text(if (isBn) "শর্তাবলী" else "Terms", fontSize = 12.sp)
+                    }
                 }
             }
         }
 
-        // Reset All to Defaults Button
-        Button(
-            onClick = {
-                viewModel.resetSettingsToDefaults()
-                Toast.makeText(
-                    context,
-                    if (isBn) "সব সেটিংস ডিফল্ট করা হয়েছে" else "All settings reset to defaults",
-                    Toast.LENGTH_SHORT
-                ).show()
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
-        ) {
-            Text(
-                text = if (isBn) "সব সেটিংস ডিফল্টে ফিরিয়ে আনুন (Reset to Defaults)" else "Reset All Settings to Defaults",
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        // AdMob Banner ONLY on History & Settings for Free users
-        AdMobBannerCard(isVisible = !viewModel.canUseFeature(GatedFeature.AD_FREE))
-
-        Spacer(modifier = Modifier.height(12.dp))
+        // AdMob Banner Ad on Settings Screen
+        AdMobBannerCard(isVisible = true)
     }
 }
 
@@ -497,65 +375,35 @@ fun SettingsScreen(
 private fun SettingsCard(
     title: String,
     subtitle: String? = null,
-    content: @Composable () -> Unit
+    content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            if (!subtitle.isNullOrBlank()) {
+            if (subtitle != null) {
                 Text(
                     text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             content()
         }
-    }
-}
-
-@Composable
-private fun SliderWithHelp(
-    title: String,
-    help: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        if (help.isNotBlank()) {
-            Text(
-                text = help,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = valueRange,
-            colors = SliderDefaults.colors(
-                thumbColor = OntikGreenPrimary,
-                activeTrackColor = OntikGreenPrimary
-            )
-        )
     }
 }
 
@@ -574,22 +422,26 @@ private fun SettingToggleRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(checkedTrackColor = OntikGreenPrimary)
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = OntikGreenPrimary
+            )
         )
     }
 }

@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,7 +23,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -54,7 +52,6 @@ fun HomeDashboardScreen(
     onNavigateToSettings: () -> Unit
 ) {
     val sessions by viewModel.historySessions.collectAsState()
-    val planState by viewModel.planState.collectAsState()
     val user by viewModel.currentUser.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val isBn = settings.language == AppLanguage.BANGLA
@@ -94,7 +91,7 @@ fun HomeDashboardScreen(
                     fontWeight = FontWeight.ExtraBold
                 )
                 Text(
-                    text = if (isBn) "হোম ড্যাশবোর্ড ও সারাংশ" else "Home Dashboard & Plan Summary",
+                    text = if (isBn) "হোম ড্যাশবোর্ড ও সারাংশ" else "Home Dashboard & Summary",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -103,11 +100,10 @@ fun HomeDashboardScreen(
                 onClick = onNavigateToProfile,
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text(planState.tier.badge(settings.language), fontWeight = FontWeight.Bold)
+                Text(if (isBn) "অ্যাকাউন্ট" else "Account", fontWeight = FontWeight.Bold)
             }
         }
 
-        // Guest backup prompt
         if (user.isGuest) {
             Card(
                 shape = RoundedCornerShape(18.dp),
@@ -137,7 +133,6 @@ fun HomeDashboardScreen(
             }
         }
 
-        // Today & Weekly Summary Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(22.dp),
@@ -177,29 +172,9 @@ fun HomeDashboardScreen(
                         )
                     }
                 }
-
-                if (!planState.isEffectivePro) {
-                    val progress = (planState.todayUsedCount.toFloat() / planState.freeDailyLimit.coerceAtLeast(1)).coerceIn(0f, 1f)
-                    Text(
-                        text = if (isBn) {
-                            "আজকের গণনা: ${planState.todayUsedCount} (ফ্রি আনলিমিটেড)"
-                        } else {
-                            "Today's Count: ${planState.todayUsedCount} (Free Unlimited)"
-                        },
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp),
-                        color = OntikGreenPrimary
-                    )
-                }
             }
         }
 
-        // Quick Start Camera Button
         Button(
             onClick = onStartCounting,
             modifier = Modifier
@@ -235,20 +210,6 @@ fun HomeDashboardScreen(
                 Text(if (isBn) "সেটিংস (Settings)" else "Settings")
             }
         }
-
-        if (!planState.isEffectivePro) {
-            OutlinedButton(
-                onClick = onNavigateToPaywall,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, OntikAmberAccent)
-            ) {
-                Text(
-                    text = if (isBn) "আনলিমিটেড প্রো প্ল্যান দেখুন (Upgrade to PRO)" else "View ONTIK PRO Unlimited Plan",
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
     }
 }
 
@@ -272,7 +233,7 @@ fun LegalDocumentScreen(
                 Icon(Icons.Default.ArrowBack, contentDescription = "Back")
             }
             Text(
-                text = if (isPrivacyPolicy) "Privacy Policy & Data Safety" else "Terms of Service",
+                text = if (isPrivacyPolicy) "গোপনীয়তা নীতি (Privacy Policy)" else "শর্তাবলী (Terms of Service)",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -288,17 +249,17 @@ fun LegalDocumentScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 if (isPrivacyPolicy) {
-                    Text("1. 100% On-Device Camera Processing", fontWeight = FontWeight.Bold)
-                    Text("ONTIK Count AI processes all camera frames locally on your Android device using OpenCV. Camera video or images are never uploaded to any server.")
-                    Text("2. Data Collected (Optional Account & Pro Sync)", fontWeight = FontWeight.Bold)
-                    Text("If you sign in, we store your Name, Email address, and session count records in Google Cloud Firestore solely to provide multi-device backup and verify your Pro subscription status via RevenueCat.")
-                    Text("3. Account & Data Deletion", fontWeight = FontWeight.Bold)
-                    Text("You can permanently delete your account and all cloud/local data at any time inside Profile -> Delete Account & All Cloud Data.")
+                    Text("১. ক্যামেরা প্রসেসিং (On-Device Camera Processing)", fontWeight = FontWeight.Bold)
+                    Text("ONTIK Count AI আপনার ফোনের ক্যামেরা ফ্রেম সরাসরি ফোনের ভেতরেই OpenCV প্রযুক্তিতে প্রসেস করে। কোনো ছবি বা ভিডিও সার্ভারে আপলোড করা হয় না।")
+                    Text("২. সংগৃহীত তথ্য ও বিজ্ঞাপন (Account & Ads)", fontWeight = FontWeight.Bold)
+                    Text("আপনি লগইন করলে আপনার নাম, ইমেইল ও গণনার সেশন হিস্ট্রি Google Cloud Firestore-এ ব্যাকআপ রাখা হয় এবং অ্যাপে Google AdMob বিজ্ঞাপন প্রদর্শিত হয়।")
+                    Text("৩. অ্যাকাউন্ট ও ডেটা মুছে ফেলা (Account Deletion)", fontWeight = FontWeight.Bold)
+                    Text("আপনি যেকোনো সময় প্রোফাইল (Profile) স্ক্রিনে গিয়ে 'Delete Account' বাটনে চাপ দিয়ে আপনার অ্যাকাউন্ট ও সমস্ত ডেটা স্থায়ীভাবে মুছে ফেলতে পারবেন।")
                 } else {
-                    Text("1. Service & Offline Use", fontWeight = FontWeight.Bold)
-                    Text("ONTIK Count AI provides an offline classical computer vision grain and seed counter. Free accounts include up to 500 daily counts and 5 local history records.")
-                    Text("2. ONTIK PRO Subscriptions", fontWeight = FontWeight.Bold)
-                    Text("PRO subscriptions are billed via Google Play Store and auto-renew unless cancelled at least 24 hours prior to renewal in Google Play Store -> Subscriptions.")
+                    Text("১. সেবা ও ইন্টারনেট সংযোগ (Online Service)", fontWeight = FontWeight.Bold)
+                    Text("ONTIK Count AI একটি সম্পূর্ণ অনলাইনভিত্তিক শস্য ও বীজ গণনাকারী অ্যাপ। অ্যাপটি ব্যবহারের সময় ইন্টারনেট সংযোগ চালু থাকা আবশ্যক।")
+                    Text("২. আনলিমিটেড ব্যবহার (Unlimited Counting)", fontWeight = FontWeight.Bold)
+                    Text("ব্যবহারকারীরা কোনো সাবস্ক্রিপশন ফি ছাড়াই আনলিমিটেড গণনা, সেশন হিস্ট্রি এবং CSV/TXT/PDF রিপোর্ট এক্সপোর্ট করতে পারবেন।")
                 }
             }
         }

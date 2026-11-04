@@ -19,16 +19,9 @@ import javax.inject.Singleton
 import kotlin.math.max
 
 /**
- * Single centralized [PlanManager] governing Free vs Pro feature gating, daily limit tracking,
- * midnight reset, anti-tamper reconciliation with Firestore, and 7-day offline Pro verification grace period.
- *
- * Security & Offline rules:
- * - Caches `plan`, `proExpiresAtMs`, `lastVerifiedOnlineMs`, `dailyDate`, and `dailyCount` inside
- *   AES-256 [EncryptedSharedPreferences] (with safe fallback for unit tests).
- * - Pro keeps working 100% offline for up to 7 days (`SEVEN_DAYS_MS`) after the last successful online verification.
- * - After 7 days offline, `isWithinOfflineGracePeriod` becomes `false` and `requiresOnlineVerification` becomes `true`.
- * - Anti-tamper daily count: when syncing with Firestore (`reconcileRemoteDailyCount`), always takes
- *   `max(localTodayCount, remoteTodayCount)` so clearing app data never resets the Free daily limit.
+ * Single centralized [PlanManager].
+ * All counting, history, export, presets, alarm, and cloud backup features are 100% unlocked for all users.
+ * Monetization is 100% online AdMob ads on secondary screens (`GatedFeature.AD_FREE` is always `false`).
  */
 @Singleton
 class PlanManager @Inject constructor(
@@ -36,8 +29,8 @@ class PlanManager @Inject constructor(
 ) {
     companion object {
         const val SEVEN_DAYS_MS = 7L * 24L * 3600L * 1000L
-        const val DEFAULT_FREE_DAILY_LIMIT = 500
-        const val DEFAULT_FREE_HISTORY_LIMIT = 5
+        const val DEFAULT_FREE_DAILY_LIMIT = Int.MAX_VALUE
+        const val DEFAULT_FREE_HISTORY_LIMIT = Int.MAX_VALUE
 
         private const val PREF_PLAN_TIER = "plan_tier"
         private const val PREF_PRO_EXPIRES_MS = "pro_expires_ms"
@@ -49,17 +42,11 @@ class PlanManager @Inject constructor(
             return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(nowMs))
         }
 
-        /**
-         * Pure testable helper for evaluating 7-day offline grace period.
-         */
         fun isWithinGracePeriod(lastVerifiedMs: Long, nowMs: Long): Boolean {
             if (lastVerifiedMs <= 0L) return false
             return (nowMs - lastVerifiedMs) <= SEVEN_DAYS_MS
         }
 
-        /**
-         * Pure testable helper for anti-tamper daily limit reconciliation.
-         */
         fun reconcileDailyCountValues(
             localDate: String,
             localCount: Int,
@@ -98,12 +85,13 @@ class PlanManager @Inject constructor(
     private fun loadInitialState(): PlanState {
         val nowMs = System.currentTimeMillis()
         val today = todayIsoString(nowMs)
-        val prefs = encryptedPrefs ?: return PlanState(todayDateIso = today)
-
-        val tierId = prefs.getString(PREF_PLAN_TIER, PlanTier.FREE.id) ?: PlanTier.FREE.id
-        val tier = if (tierId == PlanTier.PRO.id) PlanTier.PRO else PlanTier.FREE
-        val expiresMs = prefs.getLong(PREF_PRO_EXPIRES_MS, -1L).let { if (it <= 0L) null else it }
-        val lastVerified = prefs.getLong(PREF_LAST_VERIFIED_MS, 0L)
+        val prefs = encryptedPrefs ?: return PlanState(
+            tier = PlanTier.FREE,
+            todayDateIso = today,
+            freeDailyLimit = Int.MAX_VALUE,
+            freeHistoryLimit = Int.MAX_VALUE,
+            showAdsOnSecondaryScreens = true
+        )
 
         val storedDate = prefs.getString(PREF_DAILY_DATE, "") ?: ""
         val storedCount = if (storedDate == today) prefs.getInt(PREF_DAILY_COUNT, 0) else 0
@@ -115,99 +103,65 @@ class PlanManager @Inject constructor(
                 .apply()
         }
 
-        val withinGrace = if (tier == PlanTier.PRO) isWithinGracePeriod(lastVerified, nowMs) else true
-        val needsVerify = tier == PlanTier.PRO && !withinGrace
-
         return PlanState(
-            tier = tier,
-            proExpiresAtMs = expiresMs,
-            lastVerifiedOnlineMs = lastVerified,
-            isWithinOfflineGracePeriod = withinGrace,
-            requiresOnlineVerification = needsVerify,
+            tier = PlanTier.FREE,
+            proExpiresAtMs = null,
+            lastVerifiedOnlineMs = nowMs,
+            isWithinOfflineGracePeriod = true,
+            requiresOnlineVerification = false,
             todayDateIso = today,
-            todayUsedCount = storedCount
+            todayUsedCount = storedCount,
+            freeDailyLimit = Int.MAX_VALUE,
+            freeHistoryLimit = Int.MAX_VALUE,
+            showAdsOnSecondaryScreens = true
         )
     }
 
     /**
-     * Central gating check for all app features.
+     * All app features are unlocked for free; AD_FREE is false so AdMob banner ads always show on History & Settings.
      */
     fun canUse(feature: GatedFeature): Boolean {
         checkMidnightResetIfNeeded()
-        val s = _planState.value
-        val isPro = s.isEffectivePro
-
         return when (feature) {
-            GatedFeature.UNLIMITED_DAILY_COUNTING -> true
-            GatedFeature.UNLIMITED_HISTORY -> isPro
-            GatedFeature.CSV_EXPORT -> isPro
-            GatedFeature.PDF_EXPORT -> isPro
-            GatedFeature.CLOUD_BACKUP_SYNC -> isPro
-            GatedFeature.CUSTOM_PRESETS -> isPro
-            GatedFeature.TARGET_COUNT_ALARM -> isPro
-            GatedFeature.AD_FREE -> isPro || !s.showAdsOnSecondaryScreens
-            GatedFeature.MULTI_DEVICE_SYNC -> isPro
+            GatedFeature.AD_FREE -> false
+            else -> true
         }
     }
 
-    fun remainingToday(): Int {
-        checkMidnightResetIfNeeded()
-        return _planState.value.remainingToday
-    }
+    fun remainingToday(): Int = Int.MAX_VALUE
 
-    /**
-     * Records newly counted grains against today's usage and returns how many grains are allowed
-     * before hitting the Free daily limit.
-     */
     @Synchronized
     fun recordGrainsCounted(addedCount: Int): Int {
         if (addedCount <= 0) return 0
         checkMidnightResetIfNeeded()
         val current = _planState.value
-
-        if (current.isEffectivePro) {
-            val nextUsed = current.todayUsedCount + addedCount
-            persistDailyUsage(current.todayDateIso, nextUsed)
-            _planState.update { it.copy(todayUsedCount = nextUsed) }
-            return addedCount
-        }
-
-        // Free version also supports unlimited daily counting without capping
         val nextUsed = current.todayUsedCount + addedCount
         persistDailyUsage(current.todayDateIso, nextUsed)
         _planState.update { it.copy(todayUsedCount = nextUsed) }
         return addedCount
     }
 
-    /**
-     * Updates plan truth from server (Firestore / RevenueCat CustomerInfo) and refreshes the 7-day offline grace timer.
-     */
     @Synchronized
     fun updateVerifiedPlanFromServer(
         tier: PlanTier,
         proExpiresAtMs: Long?,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        encryptedPrefs?.edit()?.apply {
-            putString(PREF_PLAN_TIER, tier.id)
-            putLong(PREF_PRO_EXPIRES_MS, proExpiresAtMs ?: -1L)
-            putLong(PREF_LAST_VERIFIED_MS, nowMs)
-            apply()
-        }
+        // Keep ad-supported mode active for all users
         _planState.update {
             it.copy(
-                tier = tier,
-                proExpiresAtMs = proExpiresAtMs,
+                tier = PlanTier.FREE,
+                proExpiresAtMs = null,
                 lastVerifiedOnlineMs = nowMs,
                 isWithinOfflineGracePeriod = true,
-                requiresOnlineVerification = false
+                requiresOnlineVerification = false,
+                freeDailyLimit = Int.MAX_VALUE,
+                freeHistoryLimit = Int.MAX_VALUE,
+                showAdsOnSecondaryScreens = true
             )
         }
     }
 
-    /**
-     * Reconciles local daily count with Firestore daily count using `max(local, remote)` anti-tamper rule.
-     */
     @Synchronized
     fun reconcileRemoteDailyCount(remoteDateIso: String, remoteCount: Int) {
         val today = todayIsoString()
@@ -235,11 +189,9 @@ class PlanManager @Inject constructor(
     ) {
         _planState.update {
             it.copy(
-                freeDailyLimit = freeDailyLimit.coerceAtLeast(50),
-                freeHistoryLimit = freeHistoryLimit.coerceAtLeast(3),
-                showAdsOnSecondaryScreens = showAds,
-                proMonthlyPriceText = monthlyPriceText.ifBlank { it.proMonthlyPriceText },
-                proYearlyPriceText = yearlyPriceText.ifBlank { it.proYearlyPriceText },
+                freeDailyLimit = Int.MAX_VALUE,
+                freeHistoryLimit = Int.MAX_VALUE,
+                showAdsOnSecondaryScreens = true,
                 maintenanceMessage = maintenanceMessage?.takeIf { m -> m.isNotBlank() },
                 forceUpdateRequired = currentAppVersionCode < minAppVersionCode
             )
@@ -249,27 +201,12 @@ class PlanManager @Inject constructor(
     private fun checkMidnightResetIfNeeded(nowMs: Long = System.currentTimeMillis()) {
         val today = todayIsoString(nowMs)
         val current = _planState.value
-        val withinGrace = if (current.tier == PlanTier.PRO) {
-            isWithinGracePeriod(current.lastVerifiedOnlineMs, nowMs)
-        } else {
-            true
-        }
-
         if (current.todayDateIso != today) {
             persistDailyUsage(today, 0)
             _planState.update {
                 it.copy(
                     todayDateIso = today,
-                    todayUsedCount = 0,
-                    isWithinOfflineGracePeriod = withinGrace,
-                    requiresOnlineVerification = it.tier == PlanTier.PRO && !withinGrace
-                )
-            }
-        } else if (current.isWithinOfflineGracePeriod != withinGrace) {
-            _planState.update {
-                it.copy(
-                    isWithinOfflineGracePeriod = withinGrace,
-                    requiresOnlineVerification = it.tier == PlanTier.PRO && !withinGrace
+                    todayUsedCount = 0
                 )
             }
         }

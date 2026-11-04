@@ -11,13 +11,14 @@ import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,7 +31,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -41,13 +41,14 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -55,11 +56,11 @@ import androidx.core.content.ContextCompat
 import com.ontik.countai.domain.model.CountingDirection
 import com.ontik.countai.domain.model.NormalizedRect
 import com.ontik.countai.domain.model.TrackedGrain
-import com.ontik.countai.ui.theme.DangerRed
 import com.ontik.countai.ui.theme.OntikAmberAccent
 import com.ontik.countai.ui.theme.OntikGreenBright
 import com.ontik.countai.ui.theme.OntikGreenPrimary
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
 @SuppressLint("UnsafeOptInUsageError")
@@ -88,7 +89,8 @@ fun CameraPreviewWithZoneOverlay(
 
     val previewView = remember {
         PreviewView(context).apply {
-            scaleType = PreviewView.ScaleType.FILL_CENTER
+            // P3 Fix: FIT_CENTER preserves the exact 9:16 (360x640) aspect ratio without edge cropping
+            scaleType = PreviewView.ScaleType.FIT_CENTER
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
     }
@@ -102,7 +104,6 @@ fun CameraPreviewWithZoneOverlay(
         }
     }
 
-    // Bind CameraX 1280x720 ImageAnalysis with Camera2Interop FPS target
     LaunchedEffect(useBackCamera, targetFps) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
@@ -156,10 +157,18 @@ fun CameraPreviewWithZoneOverlay(
         }, ContextCompat.getMainExecutor(context))
     }
 
-    // Lock AE, AWB, and AF after calibration via Camera2CameraControl
+    // P9 Fix: Lock AE, AWB, AND Focus (AF) on ROI center after calibration
     LaunchedEffect(lockCameraExposureFocus, activeCamera) {
         val cam = activeCamera ?: return@LaunchedEffect
         try {
+            if (lockCameraExposureFocus) {
+                val factory = SurfaceOrientedMeteringPointFactory(1f, 1f)
+                val centerPt = factory.createPoint(roiRect.centerX, roiRect.centerY)
+                val action = FocusMeteringAction.Builder(centerPt, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+                    .setAutoCancelDuration(5, TimeUnit.SECONDS)
+                    .build()
+                cam.cameraControl.startFocusAndMetering(action)
+            }
             val c2Control = Camera2CameraControl.from(cam.cameraControl)
             val options = CaptureRequestOptions.Builder()
                 .setCaptureRequestOption(CaptureRequest.CONTROL_AE_LOCK, lockCameraExposureFocus)
@@ -187,18 +196,6 @@ fun CameraPreviewWithZoneOverlay(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Optional Semi-Transparent Binary Debug Mask Overlay inside the screen
-        if (showDebugMask && debugMaskBitmap != null) {
-            Image(
-                bitmap = debugMaskBitmap.asImageBitmap(),
-                contentDescription = "OpenCV Binary Mask Overlay",
-                contentScale = ContentScale.FillBounds,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .alpha(0.45f)
-            )
-        }
-
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -224,7 +221,6 @@ fun CameraPreviewWithZoneOverlay(
                             1f
                         }
 
-                        // Check if dragging Line A pill handle
                         if (distLineA < 0.045f && px in localRoi.left..localRoi.right && py in localRoi.top..localRoi.bottom) {
                             localLineA = if (isHoriz) {
                                 (localLineA + dy).coerceIn(localRoi.top + 0.06f, localRoi.bottom - 0.06f)
@@ -238,7 +234,6 @@ fun CameraPreviewWithZoneOverlay(
                                 (localLineB + dx).coerceIn(localRoi.left + 0.06f, localRoi.right - 0.06f)
                             }
                         } else {
-                            // Dragging ROI corner handles
                             val midX = (localRoi.left + localRoi.right) * 0.5f
                             val midY = (localRoi.top + localRoi.bottom) * 0.5f
                             if (px < midX && py < midY) {
@@ -277,6 +272,16 @@ fun CameraPreviewWithZoneOverlay(
                 bottom = localRoi.bottom * ch
             )
 
+            // P3 Fix: Draw Debug Mask strictly inside the ROI box (roiPx), never stretched across the whole screen
+            if (showDebugMask && debugMaskBitmap != null) {
+                drawImage(
+                    image = debugMaskBitmap.asImageBitmap(),
+                    dstOffset = IntOffset(roiPx.left.toInt(), roiPx.top.toInt()),
+                    dstSize = IntSize(roiPx.width.toInt().coerceAtLeast(1), roiPx.height.toInt().coerceAtLeast(1)),
+                    alpha = 0.55f
+                )
+            }
+
             // 1. Dim Area Outside ROI
             val dimColor = Color.Black.copy(alpha = 0.48f)
             drawRect(dimColor, Offset(0f, 0f), ComposeSize(cw, roiPx.top))
@@ -305,7 +310,7 @@ fun CameraPreviewWithZoneOverlay(
                 drawCircle(color = OntikGreenBright, radius = handleRadius, center = c)
             }
 
-            // 3. Primary Counting Line A (Dashed, Glowing, with Draggable Pill Handle & Direction Arrow)
+            // 3. Primary Counting Line A
             val dashEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 14f), 0f)
             if (countingDirection.isHorizontalLine) {
                 val yA = (localLineA * ch).coerceIn(roiPx.top + 12f, roiPx.bottom - 12f)
@@ -323,38 +328,30 @@ fun CameraPreviewWithZoneOverlay(
                     pathEffect = dashEffect
                 )
 
-                // Draggable Pill Handle on Line A
-                val pillW = 46.dp.toPx()
-                val pillH = 18.dp.toPx()
-                val pillCenter = Offset(roiPx.center.x, yA)
+                val pillW = 48.dp.toPx()
+                val pillH = 20.dp.toPx()
+                val midX = roiPx.center.x
                 drawRoundRect(
                     color = OntikAmberAccent,
-                    topLeft = Offset(pillCenter.x - pillW * 0.5f, pillCenter.y - pillH * 0.5f),
+                    topLeft = Offset(midX - pillW * 0.5f, yA - pillH * 0.5f),
                     size = ComposeSize(pillW, pillH),
-                    cornerRadius = CornerRadius(9.dp.toPx(), 9.dp.toPx())
+                    cornerRadius = CornerRadius(pillH * 0.5f, pillH * 0.5f)
                 )
 
-                // Direction Arrow inside Pill
-                val arrowDir = if (countingDirection == CountingDirection.BOTTOM_TO_TOP) -1f else 1f
+                val arrowSize = 5.dp.toPx()
                 val arrowPath = Path().apply {
-                    moveTo(pillCenter.x - 6.dp.toPx(), pillCenter.y - 3.dp.toPx() * arrowDir)
-                    lineTo(pillCenter.x + 6.dp.toPx(), pillCenter.y - 3.dp.toPx() * arrowDir)
-                    lineTo(pillCenter.x, pillCenter.y + 4.dp.toPx() * arrowDir)
+                    if (countingDirection == CountingDirection.BOTTOM_TO_TOP) {
+                        moveTo(midX, yA - arrowSize)
+                        lineTo(midX - arrowSize, yA + arrowSize * 0.7f)
+                        lineTo(midX + arrowSize, yA + arrowSize * 0.7f)
+                    } else {
+                        moveTo(midX, yA + arrowSize)
+                        lineTo(midX - arrowSize, yA - arrowSize * 0.7f)
+                        lineTo(midX + arrowSize, yA - arrowSize * 0.7f)
+                    }
                     close()
                 }
                 drawPath(arrowPath, color = Color.Black)
-
-                // Optional Verification Line B
-                if (enableVerificationLineB) {
-                    val yB = (localLineB * ch).coerceIn(roiPx.top + 12f, roiPx.bottom - 12f)
-                    drawLine(
-                        color = Color(0xFF38BDF8),
-                        start = Offset(roiPx.left, yB),
-                        end = Offset(roiPx.right, yB),
-                        strokeWidth = 2.2.dp.toPx(),
-                        pathEffect = dashEffect
-                    )
-                }
             } else {
                 val xA = (localLineA * cw).coerceIn(roiPx.left + 12f, roiPx.right - 12f)
                 drawLine(
@@ -371,91 +368,84 @@ fun CameraPreviewWithZoneOverlay(
                     pathEffect = dashEffect
                 )
 
-                val pillW = 18.dp.toPx()
-                val pillH = 46.dp.toPx()
-                val pillCenter = Offset(xA, roiPx.center.y)
+                val pillW = 20.dp.toPx()
+                val pillH = 48.dp.toPx()
+                val midY = roiPx.center.y
                 drawRoundRect(
                     color = OntikAmberAccent,
-                    topLeft = Offset(pillCenter.x - pillW * 0.5f, pillCenter.y - pillH * 0.5f),
+                    topLeft = Offset(xA - pillW * 0.5f, midY - pillH * 0.5f),
                     size = ComposeSize(pillW, pillH),
-                    cornerRadius = CornerRadius(9.dp.toPx(), 9.dp.toPx())
+                    cornerRadius = CornerRadius(pillW * 0.5f, pillW * 0.5f)
                 )
             }
 
-            // 4. Draw Tracked Grains: Fading Motion Trail + Colored Dot + 200ms Counted Flash Ring + Clump Badge
+            // 4. Clean Tracked Grain Dots (Green = Counted, Yellow = Uncounted)
             for (grain in trackedGrains) {
                 val gx = grain.currentX * cw
                 val gy = grain.currentY * ch
-                val timeSinceCounted = nowMs - grain.countedFlashTimestampMs
-                val isFlashing = grain.countedLineA && timeSinceCounted in 0..220L
+                val recentlyCounted = grain.countedLineA && (nowMs - grain.countedFlashTimestampMs) < 380L
 
                 val dotColor = when {
-                    grain.isClump -> DangerRed
                     grain.countedLineA -> OntikGreenBright
                     else -> OntikAmberAccent
                 }
 
-                // Short fading trail
-                val pts = grain.trailPoints
-                if (pts.size >= 2) {
-                    for (i in 0 until pts.size - 1) {
-                        val alpha = ((i + 1).toFloat() / pts.size) * 0.65f
-                        drawLine(
-                            color = dotColor.copy(alpha = alpha),
-                            start = Offset(pts[i].first * cw, pts[i].second * ch),
-                            end = Offset(pts[i + 1].first * cw, pts[i + 1].second * ch),
-                            strokeWidth = 2.5.dp.toPx()
-                        )
+                if (grain.trailPoints.size >= 2) {
+                    val trailPath = Path()
+                    grain.trailPoints.forEachIndexed { idx, (tx, ty) ->
+                        val px = tx * cw
+                        val py = ty * ch
+                        if (idx == 0) trailPath.moveTo(px, py) else trailPath.lineTo(px, py)
                     }
-                }
-
-                // 200 ms Green Flash Ring when counted
-                if (isFlashing) {
-                    val progress = (timeSinceCounted / 220f).coerceIn(0f, 1f)
-                    val ringRadius = (10.dp.toPx() + progress * 18.dp.toPx())
-                    drawCircle(
-                        color = OntikGreenBright.copy(alpha = 1f - progress),
-                        radius = ringRadius,
-                        center = Offset(gx, gy),
-                        style = Stroke(width = 3.dp.toPx())
+                    drawPath(
+                        path = trailPath,
+                        color = dotColor.copy(alpha = 0.45f),
+                        style = Stroke(width = 2.dp.toPx())
                     )
                 }
 
-                // Center grain dot
+                val baseRadius = if (recentlyCounted) 10.dp.toPx() else 6.dp.toPx()
+                if (recentlyCounted) {
+                    drawCircle(
+                        color = OntikGreenBright.copy(alpha = 0.40f),
+                        radius = baseRadius * 1.9f,
+                        center = Offset(gx, gy)
+                    )
+                }
                 drawCircle(
                     color = dotColor,
-                    radius = if (grain.estimatedGrainCount > 1) 6.5.dp.toPx() else 4.5.dp.toPx(),
+                    radius = baseRadius,
                     center = Offset(gx, gy)
                 )
 
-                // Optional ID or multi-grain split badge (e.g. "x2", "CLUMP x7")
-                if (showTrackIds || grain.estimatedGrainCount > 1 || grain.isClump) {
-                    val badgeText = buildString {
-                        if (showTrackIds) append("#${grain.trackId} ")
-                        if (grain.isClump) append("CLUMP ")
-                        if (grain.estimatedGrainCount > 1) append("x${grain.estimatedGrainCount}")
-                    }.trim()
-
-                    if (badgeText.isNotEmpty()) {
-                        val layout = textMeasurer.measure(
-                            text = badgeText,
-                            style = TextStyle(
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                val labelParts = buildList {
+                    if (showTrackIds) add("#${grain.trackId}")
+                    if (grain.estimatedGrainCount in 2..3) add("x${grain.estimatedGrainCount}")
+                }
+                if (labelParts.isNotEmpty()) {
+                    val labelStr = labelParts.joinToString(" ")
+                    val measured = textMeasurer.measure(
+                        text = labelStr,
+                        style = TextStyle(
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
                         )
-                        drawRoundRect(
-                            color = Color.Black.copy(alpha = 0.72f),
-                            topLeft = Offset(gx + 6.dp.toPx(), gy - layout.size.height * 0.5f),
-                            size = ComposeSize(layout.size.width + 10f, layout.size.height + 4f),
-                            cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
-                        )
-                        drawText(
-                            textLayoutResult = layout,
-                            topLeft = Offset(gx + 6.dp.toPx() + 5f, gy - layout.size.height * 0.5f + 2f)
-                        )
-                    }
+                    )
+                    val tagTopLeft = Offset(
+                        (gx + 8.dp.toPx()).coerceAtMost(cw - measured.size.width - 12f),
+                        (gy - 10.dp.toPx()).coerceAtLeast(12f)
+                    )
+                    drawRoundRect(
+                        color = Color.Black.copy(alpha = 0.72f),
+                        topLeft = Offset(tagTopLeft.x - 4f, tagTopLeft.y - 2f),
+                        size = ComposeSize(measured.size.width + 8f, measured.size.height + 4f),
+                        cornerRadius = CornerRadius(6f, 6f)
+                    )
+                    drawText(
+                        textLayoutResult = measured,
+                        topLeft = tagTopLeft
+                    )
                 }
             }
         }

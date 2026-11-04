@@ -7,10 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,7 +30,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,13 +54,9 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.ontik.countai.domain.model.AppLanguage
 import com.ontik.countai.ui.theme.DangerRed
-import com.ontik.countai.ui.theme.OntikAmberAccent
 import com.ontik.countai.ui.theme.OntikGreenPrimary
 import com.ontik.countai.ui.viewmodel.CountViewModel
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun ProfileScreen(
@@ -84,8 +77,6 @@ fun ProfileScreen(
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
     var reauthPassword by remember { mutableStateOf("") }
 
-    val dateFormatter = remember { SimpleDateFormat("MMM dd, yyyy", Locale.US) }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -101,13 +92,12 @@ fun ProfileScreen(
                 Icon(Icons.Default.ArrowBack, contentDescription = "Back")
             }
             Text(
-                text = if (isBn) "প্রোফাইল ও অ্যাকাউন্ট (Profile)" else "Account & Plan Profile",
+                text = if (isBn) "অ্যাকাউন্ট ও প্রোফাইল (Profile)" else "Account Profile",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
         }
 
-        // Avatar + Plan Badge Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(22.dp),
@@ -129,7 +119,7 @@ fun ProfileScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     val initials = user.name.trim().take(2).uppercase()
-                    if (initials.isNotEmpty()) {
+                    if (initials.isNotEmpty() && !user.isGuest) {
                         Text(
                             text = initials,
                             color = Color.White,
@@ -141,30 +131,21 @@ fun ProfileScreen(
                     }
                 }
 
-                // Plan Badge (FREE / PRO with Expiry Date)
-                val isPro = planState.isEffectivePro
-                Surface(
-                    color = if (isPro) OntikAmberAccent else OntikGreenPrimary.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    val expiryStr = planState.proExpiresAtMs?.let { " • Exp: ${dateFormatter.format(Date(it))}" } ?: ""
-                    Text(
-                        text = "${planState.tier.badge(settings.language)}$expiryStr",
-                        color = if (isPro) Color.Black else OntikGreenPrimary,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
-                    )
-                }
-
                 Text(
                     text = if (user.isGuest) {
-                        if (isBn) "গেস্ট মোড (শুধুমাত্র লোকাল ডেটা)" else "Guest Mode (Local Storage Only)"
+                        if (isBn) "গেস্ট মোড (লগইন করা হয়নি)" else "Guest Mode (Not Signed In)"
                     } else {
                         user.email
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Text(
+                    text = if (isBn) "আজকের মোট গণনা: ${planState.todayUsedCount} (আনলিমিটেড)" else "Today's Count: ${planState.todayUsedCount} (Unlimited)",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = OntikGreenPrimary
                 )
 
                 if (user.isGuest) {
@@ -175,7 +156,7 @@ fun ProfileScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = if (isBn) "ডেটা ব্যাকআপ রাখতে সাইন ইন করুন" else "Sign In to Back Up Your Data",
+                            text = if (isBn) "ক্লাউড ব্যাকআপের জন্য লগইন / সাইন-আপ করুন" else "Sign In / Create Account for Cloud Backup",
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -206,56 +187,6 @@ fun ProfileScreen(
             }
         }
 
-        // Subscription & Daily Usage Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-        ) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = if (isBn) "সাবস্ক্রিপশন ও আজকের ব্যবহার" else "Plan & Daily Usage",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = if (planState.isEffectivePro) {
-                        if (isBn) "আজকের গণনা: ${planState.todayUsedCount} (আনলিমিটেড প্রো)" else "Today's count: ${planState.todayUsedCount} (Unlimited PRO)"
-                    } else {
-                        if (isBn) "আজকের গণনা: ${planState.todayUsedCount} (ফ্রি আনলিমিটেড)" else "Today's Count: ${planState.todayUsedCount} (Free Unlimited)"
-                    },
-                    style = MaterialTheme.typography.bodyLarge
-                )
-
-                if (!planState.isEffectivePro) {
-                    Button(
-                        onClick = onNavigateToPaywall,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = OntikGreenPrimary)
-                    ) {
-                        Text(
-                            text = if (isBn) "ONTIK PRO-তে আপগ্রেড করুন" else "Upgrade to ONTIK PRO",
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = { viewModel.openManageSubscription(context) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text(if (isBn) "গুগল প্লে সাবস্ক্রিপশন ম্যানেজ করুন" else "Manage Subscription in Google Play")
-                    }
-                }
-            }
-        }
-
-        // Account Security: Change Password, Logout, Delete Account
         if (!user.isGuest) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -311,7 +242,7 @@ fun ProfileScreen(
             title = { Text(if (isBn) "লগআউট করবেন?" else "Confirm Logout") },
             text = {
                 Text(
-                    if (isBn) "আপনি কি আপনার অ্যাকাউন্ট থেকে লগআউট করতে চান? অফলাইন গণনা সবসময় চালু থাকবে।" else "Are you sure you want to log out? Offline counting remains available."
+                    if (isBn) "আপনি কি আপনার অ্যাকাউন্ট থেকে লগআউট করতে চান?" else "Are you sure you want to log out?"
                 )
             },
             confirmButton = {
@@ -347,9 +278,9 @@ fun ProfileScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         text = if (isBn) {
-                            "এটি আপনার Firestore ক্লাউড ব্যাকআপ, প্রোফাইল এবং লোকাল হিস্ট্রি চিরতরে মুছে ফেলবে।"
+                            "এটি আপনার ক্লাউড ব্যাকআপ, প্রোফাইল এবং লোকাল হিস্ট্রি চিরতরে মুছে ফেলবে।"
                         } else {
-                            "This permanently deletes your Firestore cloud backups, user document, Auth account, and local history."
+                            "This permanently deletes your cloud backups, profile, and local history."
                         }
                     )
                     if (!user.isGoogleAccount) {

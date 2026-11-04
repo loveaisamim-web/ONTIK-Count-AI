@@ -1,13 +1,18 @@
 <resources>
     <string name="app_name">ONTIK Count AI</string>
-    <string name="tagline">উচ্চ-নির্ভুল অফলাইন শস্য ও বীজ গণনাকারী</string>
+    <string name="tagline">উচ্চ-নির্ভুল শস্য ও বীজ গণনাকারী</string>
     <string name="status_calibrating">ক্যালিব্রেট হচ্ছে</string>
     <string name="status_ready">প্রস্তুত</string>
     <string name="status_counting">গণনা চলছে</string>
     <string name="status_paused">বিরতি</string>
-    <string name="btn_auto_calibrate">অটো ক্যালিব্রেট</string>
-    <string name="btn_start">শুরু করুন</string>
+    <string name="btn_auto_calibrate">ক্যালিব্রেট</string>
+    <string name="btn_start">শুরু</string>
     <string name="btn_pause">বিরতি</string>
     <string name="btn_reset">রিসেট</string>
     <string name="btn_save">সেভ</string>
+    <string name="internet_required_title">ইন্টারনেট সংযোগ প্রয়োজন</string>
+    <string name="internet_required_body">ONTIK Count AI ব্যবহার করতে অনুগ্রহ করে ফোনের Wi-Fi অথবা Mobile Data চালু করুন।</string>
+    <string name="settings_title">সেটিংস</string>
+    <string name="history_title">গণনার ইতিহাস</string>
+    <string name="profile_title">অ্যাকাউন্ট প্রোফাইল</string>
 </resources>

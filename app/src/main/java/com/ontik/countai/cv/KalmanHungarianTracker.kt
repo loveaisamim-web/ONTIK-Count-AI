@@ -6,25 +6,11 @@ import com.ontik.countai.domain.model.NormalizedRect
 import com.ontik.countai.domain.model.TrackLifecycleState
 import com.ontik.countai.domain.model.TrackedGrain
 import kotlin.math.hypot
-import kotlin.math.max
 
 /**
  * Multi-Object Kalman + Hungarian Tracker tailored for high-speed falling grains/seeds.
- *
- * Features:
- * - 4-state Constant-Velocity Kalman filter `[x, y, vx, vy]` per track using real frame `dtSeconds`.
- * - Optimal Hungarian assignment (`HungarianAlgorithm`) with speed-scaled and tentative-scaled gating distance
- *   (automatically widened when a frame drop `dt > 2 * expectedDt` is detected or on the first jump).
- * - Segment-intersection line crossing evaluated directly on physical centroid displacement
- *   `(prevMeasuredX, prevMeasuredY) -> (currMeasuredX, currMeasuredY)`, preventing Kalman filter dampening lag.
- * - Track states:
- *   - `TENTATIVE` (needs 2 consecutive hits to confirm; if it crosses the line while tentative,
- *     records `tentativeCrossedLineA = true` and counts retroactively upon confirmation within 3 frames).
- *   - `CONFIRMED` (active track).
- *   - `LOST` (kept up to 8 frames or 150 ms via Kalman prediction).
- * - Split/merge inheritance: when a counted clump splits into nearby child blobs, children inherit
- *   `countedLineA = true` proportionally so they are never double-counted.
- * - Dual-line support: Primary Counting Line A + optional Verification Line B.
+ * P8 Fix: Uses current blob's estimatedGrainCount instead of an irreversible all-time max(...)
+ * so a single grain never gets inflated by a momentary neighbor touch.
  */
 class KalmanHungarianTracker {
 
@@ -95,8 +81,8 @@ class KalmanHungarianTracker {
             val newX = (x + kalmanGainPos * residualX).coerceIn(0f, 1f)
             val newY = (y + kalmanGainPos * residualY).coerceIn(0f, 1f)
 
-            val measuredVx = ( blob.centerX - prevX ) / dt
-            val measuredVy = ( blob.centerY - prevY ) / dt
+            val measuredVx = (blob.centerX - prevX) / dt
+            val measuredVy = (blob.centerY - prevY) / dt
             vx = if (ageFrames == 1) measuredVx else (0.65f * measuredVx + 0.35f * vx)
             vy = if (ageFrames == 1) measuredVy else (0.65f * measuredVy + 0.35f * vy)
 
@@ -105,7 +91,8 @@ class KalmanHungarianTracker {
             posVar *= (1f - kalmanGainPos)
 
             boundingBox = blob.boundingBox
-            estimatedGrainCount = max(estimatedGrainCount, blob.estimatedGrainCount)
+            // P8 Fix: Use current blob's estimatedGrainCount (bounded to 1..3) instead of all-time max(...)
+            estimatedGrainCount = blob.estimatedGrainCount.coerceIn(1, 3)
             isClump = blob.isClump
             isMotionStreak = blob.isMotionStreak
             consecutiveHits += 1
@@ -182,14 +169,12 @@ class KalmanHungarianTracker {
         }
         lastFrameTimestampMs = timestampMs
         val dtSeconds = (dtMs / 1000f).coerceIn(0.005f, 0.25f)
-        val frameDropDetected = dtMs > 68L // > 2x expected 33ms (30fps)
+        val frameDropDetected = dtMs > 68L
 
-        // 1. Predict all existing tracks using real dt
         for (track in tracks) {
             track.predict(dtSeconds)
         }
 
-        // 2. Build Cost Matrix [numTracks][numBlobs] & Speed-Scaled Gating Distances
         val numTracks = tracks.size
         val numBlobs = blobs.size
         val costMatrix = Array(numTracks) { FloatArray(numBlobs) }
@@ -211,7 +196,6 @@ class KalmanHungarianTracker {
             }
         }
 
-        // 3. Optimal Assignment via Hungarian Algorithm
         val assignment = HungarianAlgorithm.solveAssignment(costMatrix, gatingArray)
         val matchedBlobIndices = HashSet<Int>()
 
@@ -226,7 +210,6 @@ class KalmanHungarianTracker {
                 val blob = blobs[matchedBIdx]
                 track.update(blob, dtSeconds, timestampMs)
 
-                // Evaluate Line A crossing on physical centroid displacement
                 if (isCountingActive) {
                     val crossSignA = LineCrossingDetector.evaluateSegmentCrossing(
                         prevX = track.prevMeasuredX,
@@ -254,12 +237,10 @@ class KalmanHungarianTracker {
                             track.countedFlashTimestampMs = timestampMs
                             newlyCountedA += track.estimatedGrainCount
                         } else {
-                            // Tentative track crossed: flag it for retroactive counting once confirmed within 3 frames
                             track.tentativeCrossedLineA = true
                             track.tentativeCrossSign = crossSignA
                         }
                     } else if (track.tentativeCrossedLineA && !track.countedLineA && track.consecutiveHits >= 2 && track.ageFrames <= 4) {
-                        // Retroactive confirmation of tentative track that crossed on frame 1->2
                         track.countedLineA = true
                         track.tentativeCrossedLineA = false
                         track.lastCrossDirectionSign = track.tentativeCrossSign
@@ -267,7 +248,6 @@ class KalmanHungarianTracker {
                         newlyCountedA += track.estimatedGrainCount
                     }
 
-                    // Optional Verification Line B
                     if (lineBPos != null && !track.countedLineB) {
                         val crossSignB = LineCrossingDetector.evaluateSegmentCrossing(
                             prevX = track.prevMeasuredX,
@@ -289,7 +269,6 @@ class KalmanHungarianTracker {
             }
         }
 
-        // 4. Prune LOST tracks older than 8 frames or 150 ms
         val iterator = tracks.iterator()
         while (iterator.hasNext()) {
             val tr = iterator.next()
@@ -299,12 +278,10 @@ class KalmanHungarianTracker {
             }
         }
 
-        // 5. Spawn new tracks for unmatched blobs (with Clump-Split inheritance check)
         for (bIdx in 0 until numBlobs) {
             if (bIdx in matchedBlobIndices) continue
             val blob = blobs[bIdx]
 
-            // Check if this unmatched blob split off from a nearby already-counted clump track
             val parentCountedClump = tracks.firstOrNull { tr ->
                 tr.countedLineA &&
                     (tr.estimatedGrainCount > 1 || tr.isClump) &&
@@ -336,7 +313,7 @@ class KalmanHungarianTracker {
                     currMeasuredX = blob.centerX,
                     currMeasuredY = blob.centerY,
                     boundingBox = blob.boundingBox,
-                    estimatedGrainCount = blob.estimatedGrainCount,
+                    estimatedGrainCount = blob.estimatedGrainCount.coerceIn(1, 3),
                     isClump = blob.isClump,
                     isMotionStreak = blob.isMotionStreak,
                     lastSeenTimestampMs = timestampMs,
