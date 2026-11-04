@@ -51,6 +51,7 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.ontik.countai.R
 import com.ontik.countai.domain.model.AppLanguage
+import com.ontik.countai.ui.components.AdMobBannerCard
 import com.ontik.countai.ui.theme.DangerRed
 import com.ontik.countai.ui.theme.OntikAmberAccent
 import com.ontik.countai.ui.theme.OntikGreenPrimary
@@ -98,7 +99,7 @@ fun AuthLoginScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "ONTIK Count AI",
             style = MaterialTheme.typography.headlineMedium,
@@ -106,7 +107,7 @@ fun AuthLoginScreen(
             color = OntikGreenPrimary
         )
         Text(
-            text = if (isBn) "ক্লাউড ব্যাকআপ ও প্রো সিঙ্কের জন্য লগইন করুন" else "Sign in for Cloud Backup & Pro Multi-Device Sync",
+            text = if (isBn) "ক্লাউড ব্যাকআপ ও সিঙ্কের জন্য লগইন করুন" else "Sign in for Cloud Backup & Sync",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -202,7 +203,6 @@ fun AuthLoginScreen(
             }
         }
 
-        // Continue with Google via Credential Manager API using R.string.default_web_client_id
         OutlinedButton(
             onClick = {
                 val webClientId = resolveDefaultWebClientId(context)
@@ -261,10 +261,12 @@ fun AuthLoginScreen(
 
         TextButton(onClick = onContinueAsGuestOrSuccess) {
             Text(
-                text = if (isBn) "গেস্ট মোডে অফলাইনে চালান (Continue as Guest)" else "Continue as Guest (100% Offline)",
+                text = if (isBn) "লগইন ছাড়াই চালিয়ে যান (Continue as Guest)" else "Continue as Guest",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+
+        AdMobBannerCard(isVisible = true)
     }
 }
 
@@ -378,7 +380,6 @@ fun AuthSignUpScreen(
             shape = RoundedCornerShape(14.dp)
         )
 
-        // Password strength indicator
         if (password.isNotEmpty()) {
             val strengthProgress = (strengthScore / 4f).coerceIn(0.15f, 1f)
             val strengthColor = when {
@@ -485,7 +486,7 @@ fun AuthSignUpScreen(
                 viewModel.signUpWithEmail(name, email, password) {
                     Toast.makeText(
                         context,
-                        if (isBn) "ভেরিফিকেশন ইমেইল পাঠানো হয়েছে!" else "Verification email sent!",
+                        if (isBn) "ভেরিফিকেশন ইমেইল পাঠানো হয়েছে! Gmail-এর Inbox বা Spam ফোল্ডার চেক করুন।" else "Verification email sent! Check your Inbox or Spam folder.",
                         Toast.LENGTH_LONG
                     ).show()
                     onSignUpSuccess()
@@ -514,5 +515,7 @@ fun AuthSignUpScreen(
                 color = OntikGreenPrimary
             )
         }
+
+        AdMobBannerCard(isVisible = true)
     }
 }

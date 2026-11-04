@@ -20,12 +20,14 @@ enum class AppThemeMode(val id: String, val labelEn: String, val labelBn: String
 }
 
 /**
- * Built-in Grain & Seed Presets that configure area limits, morphology, sensitivity, and tracking parameters.
+ * Built-in Grain & Seed Presets with both full titles (for Settings) and short fixed-width titles (for Camera HUD).
  */
 enum class GrainPreset(
     val id: String,
     val nameEn: String,
     val nameBn: String,
+    val shortEn: String,
+    val shortBn: String,
     val defaultSensitivity: Float,
     val defaultMinAreaPx: Int,
     val defaultMaxAreaPx: Int,
@@ -38,6 +40,8 @@ enum class GrainPreset(
         id = "rice",
         nameEn = "Rice (চাল / ধান)",
         nameBn = "চাল / ধান (Rice)",
+        shortEn = "Rice",
+        shortBn = "চাল / ধান",
         defaultSensitivity = 0.50f,
         defaultMinAreaPx = 18,
         defaultMaxAreaPx = 4500,
@@ -48,8 +52,10 @@ enum class GrainPreset(
     ),
     DAL_LENTIL(
         id = "dal_lentil",
-        nameEn = "Dal / Red & Yellow Lentil (ডাল / মসুর)",
-        nameBn = "ডাল / মসুর ও মুগ (Dal / Lentil)",
+        nameEn = "Dal / Lentil (ডাল / মসুর)",
+        nameBn = "ডাল / মসুর (Lentil)",
+        shortEn = "Dal / Lentil",
+        shortBn = "ডাল / মসুর",
         defaultSensitivity = 0.55f,
         defaultMinAreaPx = 14,
         defaultMaxAreaPx = 4000,
@@ -60,20 +66,24 @@ enum class GrainPreset(
     ),
     SESAME_SMALL_SEEDS(
         id = "sesame_small",
-        nameEn = "Sesame / Tiny Seeds (তিল / সরিষা / ছোট বীজ)",
-        nameBn = "তিল / সরিষা / ছোট বীজ (Small Seeds)",
-        defaultSensitivity = 0.68f,
-        defaultMinAreaPx = 6,
+        nameEn = "Small Seeds (তিল / সরিষা / বীজ)",
+        nameBn = "তিল / ছোট বীজ (Seeds)",
+        shortEn = "Small Seeds",
+        shortBn = "তিল / বীজ",
+        defaultSensitivity = 0.65f,
+        defaultMinAreaPx = 8,
         defaultMaxAreaPx = 1800,
-        defaultSingleGrainAreaPx = 32f,
+        defaultSingleGrainAreaPx = 36f,
         defaultMorphKernelSize = 3,
         defaultTrackingDistanceNormalized = 0.12f,
         defaultLineHysteresisNormalized = 0.012f
     ),
     BEANS_PEANUTS(
         id = "beans_peanuts",
-        nameEn = "Beans / Peanuts / Chickpeas (বাদাম / ছোলা / শিমের বিচি)",
-        nameBn = "বাদাম / ছোলা / শিমের বিচি (Beans / Peanuts)",
+        nameEn = "Beans / Chickpeas (বাদাম / ছোলা / বিচি)",
+        nameBn = "বাদাম / ছোলা (Beans)",
+        shortEn = "Beans",
+        shortBn = "বাদাম / ছোলা",
         defaultSensitivity = 0.45f,
         defaultMinAreaPx = 45,
         defaultMaxAreaPx = 18000,
@@ -84,8 +94,10 @@ enum class GrainPreset(
     ),
     TABLETS_CAPSULES(
         id = "tablets",
-        nameEn = "Tablets / Capsules / Pills (ট্যাবলেট / ক্যাপসুল)",
-        nameBn = "ট্যাবলেট / ক্যাপসুল / পিল (Tablets)",
+        nameEn = "Tablets / Pills (ট্যাবলেট / ক্যাপসুল)",
+        nameBn = "ট্যাবলেট / ওষুধ (Tablets)",
+        shortEn = "Tablets",
+        shortBn = "ট্যাবলেট / ওষুধ",
         defaultSensitivity = 0.45f,
         defaultMinAreaPx = 50,
         defaultMaxAreaPx = 22000,
@@ -96,8 +108,10 @@ enum class GrainPreset(
     ),
     CUSTOM(
         id = "custom",
-        nameEn = "My Custom Preset (কাস্টম প্রিসেট)",
-        nameBn = "আমার কাস্টম প্রিসেট (Custom Preset)",
+        nameEn = "Custom Preset (কাস্টম)",
+        nameBn = "কাস্টম প্রিসেট (Custom)",
+        shortEn = "Custom",
+        shortBn = "কাস্টম",
         defaultSensitivity = 0.50f,
         defaultMinAreaPx = 16,
         defaultMaxAreaPx = 8000,
@@ -108,11 +122,9 @@ enum class GrainPreset(
     );
 
     fun title(lang: AppLanguage): String = if (lang == AppLanguage.BANGLA) nameBn else nameEn
+    fun shortTitle(lang: AppLanguage): String = if (lang == AppLanguage.BANGLA) shortBn else shortEn
 }
 
-/**
- * Normalized rectangle in [0.0f .. 1.0f] relative to the full camera frame.
- */
 data class NormalizedRect(
     val left: Float,
     val top: Float,
@@ -127,10 +139,6 @@ data class NormalizedRect(
     fun contains(x: Float, y: Float): Boolean = x in left..right && y in top..bottom
 }
 
-/**
- * Single or split grain blob extracted by the classical computer vision pipeline.
- * Coordinates are normalized [0..1] in full-frame space for seamless overlay and tracking.
- */
 data class GrainBlob(
     val centerX: Float,
     val centerY: Float,
@@ -144,19 +152,13 @@ data class GrainBlob(
     val isMotionStreak: Boolean
 )
 
-/**
- * Track lifecycle state in the Kalman + Hungarian multi-object tracker.
- */
 enum class TrackLifecycleState {
-    TENTATIVE, // < 2 consecutive hits
-    CONFIRMED, // >= 2 consecutive hits
-    LOST,      // Coasting on Kalman prediction (up to 8 frames or 150ms)
+    TENTATIVE,
+    CONFIRMED,
+    LOST,
     DELETED
 }
 
-/**
- * Tracked grain or clump with 4D Kalman filter state (x, y, vx, vy), trail history, and crossing flags.
- */
 data class TrackedGrain(
     val trackId: Int,
     val state: TrackLifecycleState,
@@ -182,9 +184,6 @@ data class TrackedGrain(
     val trailPoints: List<Pair<Float, Float>>
 )
 
-/**
- * Configurable direction for virtual counting line crossing.
- */
 enum class CountingDirection(
     val displayNameEn: String,
     val displayNameBn: String,
@@ -242,9 +241,6 @@ enum class CountingDirection(
     fun subtitle(lang: AppLanguage): String = if (lang == AppLanguage.BANGLA) descriptionBn else descriptionEn
 }
 
-/**
- * Running self-check confidence badge level based on FPS, lighting stability, noise level, and clump ratio.
- */
 enum class AccuracyConfidenceLevel(val labelEn: String, val labelBn: String) {
     GOOD("Good", "উত্তম (Good)"),
     FAIR("Fair", "মাঝারি (Fair)"),
@@ -253,9 +249,6 @@ enum class AccuracyConfidenceLevel(val labelEn: String, val labelBn: String) {
     fun label(lang: AppLanguage): String = if (lang == AppLanguage.BANGLA) labelBn else labelEn
 }
 
-/**
- * Debug recorder snapshot for the last 10 seconds of counting.
- */
 data class DebugFrameSnapshot(
     val timestampMs: Long,
     val totalCount: Int,

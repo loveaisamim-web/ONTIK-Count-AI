@@ -38,6 +38,7 @@ import androidx.compose.ui.geometry.Size as ComposeSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -58,10 +59,23 @@ import com.ontik.countai.domain.model.NormalizedRect
 import com.ontik.countai.domain.model.TrackedGrain
 import com.ontik.countai.ui.theme.OntikAmberAccent
 import com.ontik.countai.ui.theme.OntikGreenBright
-import com.ontik.countai.ui.theme.OntikGreenPrimary
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+
+private enum class DragTarget {
+    NONE,
+    LINE_A,
+    LINE_B,
+    TOP_LEFT,
+    TOP_RIGHT,
+    BOTTOM_LEFT,
+    BOTTOM_RIGHT,
+    EDGE_TOP,
+    EDGE_BOTTOM,
+    EDGE_LEFT,
+    EDGE_RIGHT
+}
 
 @SuppressLint("UnsafeOptInUsageError")
 @Composable
@@ -89,8 +103,7 @@ fun CameraPreviewWithZoneOverlay(
 
     val previewView = remember {
         PreviewView(context).apply {
-            // P3 Fix: FIT_CENTER preserves the exact 9:16 (360x640) aspect ratio without edge cropping
-            scaleType = PreviewView.ScaleType.FIT_CENTER
+            scaleType = PreviewView.ScaleType.FILL_CENTER
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
     }
@@ -157,7 +170,6 @@ fun CameraPreviewWithZoneOverlay(
         }, ContextCompat.getMainExecutor(context))
     }
 
-    // P9 Fix: Lock AE, AWB, AND Focus (AF) on ROI center after calibration
     LaunchedEffect(lockCameraExposureFocus, activeCamera) {
         val cam = activeCamera ?: return@LaunchedEffect
         try {
@@ -186,9 +198,19 @@ fun CameraPreviewWithZoneOverlay(
         }
     }
 
-    var localRoi by remember(roiRect) { mutableStateOf(roiRect) }
+    var localRoi by remember(roiRect) {
+        mutableStateOf(
+            NormalizedRect(
+                left = roiRect.left.coerceIn(0.04f, 0.72f),
+                top = roiRect.top.coerceIn(0.16f, 0.56f),
+                right = roiRect.right.coerceIn(0.28f, 0.96f),
+                bottom = roiRect.bottom.coerceIn(0.34f, 0.72f)
+            )
+        )
+    }
     var localLineA by remember(lineAPosition) { mutableFloatStateOf(lineAPosition) }
     var localLineB by remember(lineBPosition) { mutableFloatStateOf(lineBPosition) }
+    var activeDragTarget by remember { mutableStateOf(DragTarget.NONE) }
 
     Box(modifier = modifier) {
         AndroidView(
@@ -201,62 +223,116 @@ fun CameraPreviewWithZoneOverlay(
                 .fillMaxSize()
                 .pointerInput(countingDirection, enableVerificationLineB) {
                     detectDragGestures(
+                        onDragStart = { startOffset ->
+                            val w = size.width.toFloat().coerceAtLeast(1f)
+                            val h = size.height.toFloat().coerceAtLeast(1f)
+                            val px = startOffset.x / w
+                            val py = startOffset.y / h
+
+                            val isHoriz = countingDirection.isHorizontalLine
+                            val distLineA = if (isHoriz) abs(py - localLineA) else abs(px - localLineA)
+
+                            val cornerTol = 0.08f
+                            val edgeTol = 0.06f
+
+                            activeDragTarget = when {
+                                abs(px - localRoi.left) < cornerTol && abs(py - localRoi.top) < cornerTol -> DragTarget.TOP_LEFT
+                                abs(px - localRoi.right) < cornerTol && abs(py - localRoi.top) < cornerTol -> DragTarget.TOP_RIGHT
+                                abs(px - localRoi.left) < cornerTol && abs(py - localRoi.bottom) < cornerTol -> DragTarget.BOTTOM_LEFT
+                                abs(px - localRoi.right) < cornerTol && abs(py - localRoi.bottom) < cornerTol -> DragTarget.BOTTOM_RIGHT
+                                distLineA < 0.045f && px in (localRoi.left + 0.05f)..(localRoi.right - 0.05f) && py in (localRoi.top + 0.05f)..(localRoi.bottom - 0.05f) -> DragTarget.LINE_A
+                                abs(py - localRoi.top) < edgeTol && px in localRoi.left..localRoi.right -> DragTarget.EDGE_TOP
+                                abs(py - localRoi.bottom) < edgeTol && px in localRoi.left..localRoi.right -> DragTarget.EDGE_BOTTOM
+                                abs(px - localRoi.left) < edgeTol && py in localRoi.top..localRoi.bottom -> DragTarget.EDGE_LEFT
+                                abs(px - localRoi.right) < edgeTol && py in localRoi.top..localRoi.bottom -> DragTarget.EDGE_RIGHT
+                                else -> {
+                                    // Fallback to nearest corner inside/near ROI for effortless resizing
+                                    val midX = (localRoi.left + localRoi.right) * 0.5f
+                                    val midY = (localRoi.top + localRoi.bottom) * 0.5f
+                                    when {
+                                        px < midX && py < midY -> DragTarget.TOP_LEFT
+                                        px >= midX && py < midY -> DragTarget.TOP_RIGHT
+                                        px < midX && py >= midY -> DragTarget.BOTTOM_LEFT
+                                        else -> DragTarget.BOTTOM_RIGHT
+                                    }
+                                }
+                            }
+                        },
                         onDragEnd = {
+                            activeDragTarget = DragTarget.NONE
                             onRoiAndLinesUpdated(localRoi, localLineA, localLineB)
+                        },
+                        onDragCancel = {
+                            activeDragTarget = DragTarget.NONE
                         }
                     ) { change, dragAmount ->
                         change.consume()
                         val w = size.width.toFloat().coerceAtLeast(1f)
                         val h = size.height.toFloat().coerceAtLeast(1f)
-                        val px = change.position.x / w
-                        val py = change.position.y / h
                         val dx = dragAmount.x / w
                         val dy = dragAmount.y / h
-
                         val isHoriz = countingDirection.isHorizontalLine
-                        val distLineA = if (isHoriz) abs(py - localLineA) else abs(px - localLineA)
-                        val distLineB = if (enableVerificationLineB) {
-                            if (isHoriz) abs(py - localLineB) else abs(px - localLineB)
-                        } else {
-                            1f
+
+                        when (activeDragTarget) {
+                            DragTarget.LINE_A -> {
+                                localLineA = if (isHoriz) {
+                                    (localLineA + dy).coerceIn(localRoi.top + 0.05f, localRoi.bottom - 0.05f)
+                                } else {
+                                    (localLineA + dx).coerceIn(localRoi.left + 0.05f, localRoi.right - 0.05f)
+                                }
+                            }
+                            DragTarget.TOP_LEFT -> {
+                                localRoi = localRoi.copy(
+                                    left = (localRoi.left + dx).coerceIn(0.03f, localRoi.right - 0.18f),
+                                    top = (localRoi.top + dy).coerceIn(0.15f, localRoi.bottom - 0.16f)
+                                )
+                            }
+                            DragTarget.TOP_RIGHT -> {
+                                localRoi = localRoi.copy(
+                                    right = (localRoi.right + dx).coerceIn(localRoi.left + 0.18f, 0.97f),
+                                    top = (localRoi.top + dy).coerceIn(0.15f, localRoi.bottom - 0.16f)
+                                )
+                            }
+                            DragTarget.BOTTOM_LEFT -> {
+                                localRoi = localRoi.copy(
+                                    left = (localRoi.left + dx).coerceIn(0.03f, localRoi.right - 0.18f),
+                                    bottom = (localRoi.bottom + dy).coerceIn(localRoi.top + 0.16f, 0.74f)
+                                )
+                            }
+                            DragTarget.BOTTOM_RIGHT -> {
+                                localRoi = localRoi.copy(
+                                    right = (localRoi.right + dx).coerceIn(localRoi.left + 0.18f, 0.97f),
+                                    bottom = (localRoi.bottom + dy).coerceIn(localRoi.top + 0.16f, 0.74f)
+                                )
+                            }
+                            DragTarget.EDGE_TOP -> {
+                                localRoi = localRoi.copy(
+                                    top = (localRoi.top + dy).coerceIn(0.15f, localRoi.bottom - 0.16f)
+                                )
+                            }
+                            DragTarget.EDGE_BOTTOM -> {
+                                localRoi = localRoi.copy(
+                                    bottom = (localRoi.bottom + dy).coerceIn(localRoi.top + 0.16f, 0.74f)
+                                )
+                            }
+                            DragTarget.EDGE_LEFT -> {
+                                localRoi = localRoi.copy(
+                                    left = (localRoi.left + dx).coerceIn(0.03f, localRoi.right - 0.18f)
+                                )
+                            }
+                            DragTarget.EDGE_RIGHT -> {
+                                localRoi = localRoi.copy(
+                                    right = (localRoi.right + dx).coerceIn(localRoi.left + 0.18f, 0.97f)
+                                )
+                            }
+                            else -> {}
                         }
 
-                        if (distLineA < 0.045f && px in localRoi.left..localRoi.right && py in localRoi.top..localRoi.bottom) {
-                            localLineA = if (isHoriz) {
-                                (localLineA + dy).coerceIn(localRoi.top + 0.06f, localRoi.bottom - 0.06f)
-                            } else {
-                                (localLineA + dx).coerceIn(localRoi.left + 0.06f, localRoi.right - 0.06f)
-                            }
-                        } else if (enableVerificationLineB && distLineB < 0.045f) {
-                            localLineB = if (isHoriz) {
-                                (localLineB + dy).coerceIn(localRoi.top + 0.06f, localRoi.bottom - 0.06f)
-                            } else {
-                                (localLineB + dx).coerceIn(localRoi.left + 0.06f, localRoi.right - 0.06f)
-                            }
+                        // Keep Line A safely inside the resized ROI box
+                        localLineA = if (isHoriz) {
+                            localLineA.coerceIn(localRoi.top + 0.05f, localRoi.bottom - 0.05f)
                         } else {
-                            val midX = (localRoi.left + localRoi.right) * 0.5f
-                            val midY = (localRoi.top + localRoi.bottom) * 0.5f
-                            if (px < midX && py < midY) {
-                                localRoi = localRoi.copy(
-                                    left = (localRoi.left + dx).coerceIn(0.04f, localRoi.right - 0.20f),
-                                    top = (localRoi.top + dy).coerceIn(0.08f, localRoi.bottom - 0.20f)
-                                )
-                            } else if (px >= midX && py < midY) {
-                                localRoi = localRoi.copy(
-                                    right = (localRoi.right + dx).coerceIn(localRoi.left + 0.20f, 0.96f),
-                                    top = (localRoi.top + dy).coerceIn(0.08f, localRoi.bottom - 0.20f)
-                                )
-                            } else if (px < midX && py >= midY) {
-                                localRoi = localRoi.copy(
-                                    left = (localRoi.left + dx).coerceIn(0.04f, localRoi.right - 0.20f),
-                                    bottom = (localRoi.bottom + dy).coerceIn(localRoi.top + 0.20f, 0.92f)
-                                )
-                            } else {
-                                localRoi = localRoi.copy(
-                                    right = (localRoi.right + dx).coerceIn(localRoi.left + 0.20f, 0.96f),
-                                    bottom = (localRoi.bottom + dy).coerceIn(localRoi.top + 0.20f, 0.92f)
-                                )
-                            }
+                            localLineA.coerceIn(localRoi.left + 0.05f, localRoi.right - 0.05f)
                         }
                     }
                 }
@@ -272,7 +348,6 @@ fun CameraPreviewWithZoneOverlay(
                 bottom = localRoi.bottom * ch
             )
 
-            // P3 Fix: Draw Debug Mask strictly inside the ROI box (roiPx), never stretched across the whole screen
             if (showDebugMask && debugMaskBitmap != null) {
                 drawImage(
                     image = debugMaskBitmap.asImageBitmap(),
@@ -282,23 +357,24 @@ fun CameraPreviewWithZoneOverlay(
                 )
             }
 
-            // 1. Dim Area Outside ROI
-            val dimColor = Color.Black.copy(alpha = 0.48f)
+            // Ultra-clear outside area (alpha = 0.14f) so camera feed is clearly visible everywhere
+            val dimColor = Color.Black.copy(alpha = 0.14f)
             drawRect(dimColor, Offset(0f, 0f), ComposeSize(cw, roiPx.top))
             drawRect(dimColor, Offset(0f, roiPx.bottom), ComposeSize(cw, ch - roiPx.bottom))
             drawRect(dimColor, Offset(0f, roiPx.top), ComposeSize(roiPx.left, roiPx.height))
             drawRect(dimColor, Offset(roiPx.right, roiPx.top), ComposeSize(cw - roiPx.right, roiPx.height))
 
-            // 2. ROI Rounded Border + Glowing Corner Handles
+            // Scanner Box Rounded Border
             drawRoundRect(
-                color = OntikGreenBright.copy(alpha = 0.85f),
+                color = OntikGreenBright.copy(alpha = 0.92f),
                 topLeft = roiPx.topLeft,
                 size = roiPx.size,
-                cornerRadius = CornerRadius(22.dp.toPx(), 22.dp.toPx()),
-                style = Stroke(width = 2.2.dp.toPx())
+                cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx()),
+                style = Stroke(width = 2.5.dp.toPx())
             )
 
-            val handleRadius = 7.dp.toPx()
+            // Large Easy-to-Grab Corner Handles + Mid-Edge Grab Pills for effortless resizing
+            val handleRadius = 9.dp.toPx()
             val corners = listOf(
                 roiPx.topLeft,
                 Offset(roiPx.right, roiPx.top),
@@ -306,19 +382,56 @@ fun CameraPreviewWithZoneOverlay(
                 roiPx.bottomRight
             )
             for (c in corners) {
-                drawCircle(color = OntikGreenBright.copy(alpha = 0.32f), radius = handleRadius * 1.9f, center = c)
+                drawCircle(color = Color.Black.copy(alpha = 0.45f), radius = handleRadius * 1.6f, center = c)
                 drawCircle(color = OntikGreenBright, radius = handleRadius, center = c)
+                drawCircle(color = Color.White, radius = handleRadius * 0.45f, center = c)
             }
 
-            // 3. Primary Counting Line A
+            // Mid-edge resize bars (Top, Bottom, Left, Right)
+            val edgeBarLen = 28.dp.toPx()
+            val edgeBarThick = 6.dp.toPx()
+            val midX = roiPx.center.x
+            val midY = roiPx.center.y
+            // Top & Bottom edge handles
+            drawLine(
+                color = OntikGreenBright,
+                start = Offset(midX - edgeBarLen * 0.5f, roiPx.top),
+                end = Offset(midX + edgeBarLen * 0.5f, roiPx.top),
+                strokeWidth = edgeBarThick,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = OntikGreenBright,
+                start = Offset(midX - edgeBarLen * 0.5f, roiPx.bottom),
+                end = Offset(midX + edgeBarLen * 0.5f, roiPx.bottom),
+                strokeWidth = edgeBarThick,
+                cap = StrokeCap.Round
+            )
+            // Left & Right edge handles
+            drawLine(
+                color = OntikGreenBright,
+                start = Offset(roiPx.left, midY - edgeBarLen * 0.5f),
+                end = Offset(roiPx.left, midY + edgeBarLen * 0.5f),
+                strokeWidth = edgeBarThick,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = OntikGreenBright,
+                start = Offset(roiPx.right, midY - edgeBarLen * 0.5f),
+                end = Offset(roiPx.right, midY + edgeBarLen * 0.5f),
+                strokeWidth = edgeBarThick,
+                cap = StrokeCap.Round
+            )
+
+            // Primary Counting Line A
             val dashEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 14f), 0f)
             if (countingDirection.isHorizontalLine) {
-                val yA = (localLineA * ch).coerceIn(roiPx.top + 12f, roiPx.bottom - 12f)
+                val yA = (localLineA * ch).coerceIn(roiPx.top + 14f, roiPx.bottom - 14f)
                 drawLine(
-                    color = OntikAmberAccent.copy(alpha = 0.30f),
+                    color = OntikAmberAccent.copy(alpha = 0.28f),
                     start = Offset(roiPx.left, yA),
                     end = Offset(roiPx.right, yA),
-                    strokeWidth = 10.dp.toPx()
+                    strokeWidth = 9.dp.toPx()
                 )
                 drawLine(
                     color = OntikAmberAccent,
@@ -328,9 +441,8 @@ fun CameraPreviewWithZoneOverlay(
                     pathEffect = dashEffect
                 )
 
-                val pillW = 48.dp.toPx()
+                val pillW = 46.dp.toPx()
                 val pillH = 20.dp.toPx()
-                val midX = roiPx.center.x
                 drawRoundRect(
                     color = OntikAmberAccent,
                     topLeft = Offset(midX - pillW * 0.5f, yA - pillH * 0.5f),
@@ -353,12 +465,12 @@ fun CameraPreviewWithZoneOverlay(
                 }
                 drawPath(arrowPath, color = Color.Black)
             } else {
-                val xA = (localLineA * cw).coerceIn(roiPx.left + 12f, roiPx.right - 12f)
+                val xA = (localLineA * cw).coerceIn(roiPx.left + 14f, roiPx.right - 14f)
                 drawLine(
-                    color = OntikAmberAccent.copy(alpha = 0.30f),
+                    color = OntikAmberAccent.copy(alpha = 0.28f),
                     start = Offset(xA, roiPx.top),
                     end = Offset(xA, roiPx.bottom),
-                    strokeWidth = 10.dp.toPx()
+                    strokeWidth = 9.dp.toPx()
                 )
                 drawLine(
                     color = OntikAmberAccent,
@@ -369,8 +481,7 @@ fun CameraPreviewWithZoneOverlay(
                 )
 
                 val pillW = 20.dp.toPx()
-                val pillH = 48.dp.toPx()
-                val midY = roiPx.center.y
+                val pillH = 46.dp.toPx()
                 drawRoundRect(
                     color = OntikAmberAccent,
                     topLeft = Offset(xA - pillW * 0.5f, midY - pillH * 0.5f),
@@ -379,16 +490,13 @@ fun CameraPreviewWithZoneOverlay(
                 )
             }
 
-            // 4. Clean Tracked Grain Dots (Green = Counted, Yellow = Uncounted)
+            // Tracked Grain Dots (Strictly 1 grain per dot — NO "x2" or "x3" labels!)
             for (grain in trackedGrains) {
                 val gx = grain.currentX * cw
                 val gy = grain.currentY * ch
                 val recentlyCounted = grain.countedLineA && (nowMs - grain.countedFlashTimestampMs) < 380L
 
-                val dotColor = when {
-                    grain.countedLineA -> OntikGreenBright
-                    else -> OntikAmberAccent
-                }
+                val dotColor = if (grain.countedLineA) OntikGreenBright else OntikAmberAccent
 
                 if (grain.trailPoints.size >= 2) {
                     val trailPath = Path()
@@ -404,11 +512,11 @@ fun CameraPreviewWithZoneOverlay(
                     )
                 }
 
-                val baseRadius = if (recentlyCounted) 10.dp.toPx() else 6.dp.toPx()
+                val baseRadius = if (recentlyCounted) 9.dp.toPx() else 6.dp.toPx()
                 if (recentlyCounted) {
                     drawCircle(
                         color = OntikGreenBright.copy(alpha = 0.40f),
-                        radius = baseRadius * 1.9f,
+                        radius = baseRadius * 1.8f,
                         center = Offset(gx, gy)
                     )
                 }
@@ -418,12 +526,8 @@ fun CameraPreviewWithZoneOverlay(
                     center = Offset(gx, gy)
                 )
 
-                val labelParts = buildList {
-                    if (showTrackIds) add("#${grain.trackId}")
-                    if (grain.estimatedGrainCount in 2..3) add("x${grain.estimatedGrainCount}")
-                }
-                if (labelParts.isNotEmpty()) {
-                    val labelStr = labelParts.joinToString(" ")
+                if (showTrackIds) {
+                    val labelStr = "#${grain.trackId}"
                     val measured = textMeasurer.measure(
                         text = labelStr,
                         style = TextStyle(
@@ -437,7 +541,7 @@ fun CameraPreviewWithZoneOverlay(
                         (gy - 10.dp.toPx()).coerceAtLeast(12f)
                     )
                     drawRoundRect(
-                        color = Color.Black.copy(alpha = 0.72f),
+                        color = Color.Black.copy(alpha = 0.65f),
                         topLeft = Offset(tagTopLeft.x - 4f, tagTopLeft.y - 2f),
                         size = ComposeSize(measured.size.width + 8f, measured.size.height + 4f),
                         cornerRadius = CornerRadius(6f, 6f)

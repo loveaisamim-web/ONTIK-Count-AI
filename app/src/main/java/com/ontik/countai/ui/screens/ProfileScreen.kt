@@ -53,7 +53,9 @@ import androidx.credentials.GetCredentialRequest
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.ontik.countai.domain.model.AppLanguage
+import com.ontik.countai.ui.components.AdMobBannerCard
 import com.ontik.countai.ui.theme.DangerRed
+import com.ontik.countai.ui.theme.OntikAmberAccent
 import com.ontik.countai.ui.theme.OntikGreenPrimary
 import com.ontik.countai.ui.viewmodel.CountViewModel
 import kotlinx.coroutines.launch
@@ -141,6 +143,19 @@ fun ProfileScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
+                if (!user.isGuest) {
+                    Text(
+                        text = if (user.isEmailVerified) {
+                            if (isBn) "ইমেইল স্ট্যাটাস: ভেরিফাইড ✓" else "Email Status: Verified ✓"
+                        } else {
+                            if (isBn) "ইমেইল ভেরিফাইড নয় (Gmail-এর Spam / Promotions ফোল্ডার চেক করুন)" else "Email Not Verified (Check Gmail Spam / Promotions folder)"
+                        },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (user.isEmailVerified) OntikGreenPrimary else OntikAmberAccent
+                    )
+                }
+
                 Text(
                     text = if (isBn) "আজকের মোট গণনা: ${planState.todayUsedCount} (আনলিমিটেড)" else "Today's Count: ${planState.todayUsedCount} (Unlimited)",
                     style = MaterialTheme.typography.bodyLarge,
@@ -161,6 +176,25 @@ fun ProfileScreen(
                         )
                     }
                 } else {
+                    if (!user.isEmailVerified && !user.isGoogleAccount) {
+                        Button(
+                            onClick = {
+                                viewModel.resendVerificationEmail { _, msg ->
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = OntikAmberAccent)
+                        ) {
+                            Text(
+                                text = if (isBn) "ভেরিফিকেশন ইমেইল আবার পাঠান (Resend)" else "Resend Verification Email",
+                                color = Color.Black,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
                     OutlinedTextField(
                         value = editName,
                         onValueChange = { editName = it },
@@ -234,6 +268,8 @@ fun ProfileScreen(
                 }
             }
         }
+
+        AdMobBannerCard(isVisible = true)
     }
 
     if (showLogoutDialog) {

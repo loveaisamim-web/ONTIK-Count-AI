@@ -35,7 +35,7 @@ sealed class AuthResult {
 /**
  * Handles real Firebase Authentication (Email/Password, Google Sign-In via Credential Manager ID token,
  * Guest Mode, Password Reset, Email Verification, Re-authentication, and Account Deletion)
- * plus Firestore `users/{uid}` document synchronization (P10 fix).
+ * plus Firestore `users/{uid}` document synchronization.
  */
 @Singleton
 class AuthRepository @Inject constructor(
@@ -169,6 +169,7 @@ class AuthRepository @Inject constructor(
             "Firebase চালু হয়নি।"
         )
         try {
+            auth.useAppLanguage()
             val res = auth.createUserWithEmailAndPassword(email.trim(), password).await()
             val user = res.user ?: return@withContext AuthResult.Error("Account creation failed", "অ্যাকাউন্ট তৈরি ব্যর্থ হয়েছে")
 
@@ -188,6 +189,29 @@ class AuthRepository @Inject constructor(
 
             val profile = refreshSessionAndSyncFirestore()
             AuthResult.Success(profile)
+        } catch (e: Throwable) {
+            mapFirebaseAuthException(e)
+        }
+    }
+
+    suspend fun resendEmailVerification(): AuthResult = withContext(Dispatchers.IO) {
+        val auth = firebaseAuth ?: return@withContext AuthResult.Error(
+            "Firebase is not initialized.",
+            "Firebase চালু হয়নি।"
+        )
+        try {
+            auth.useAppLanguage()
+            val user = auth.currentUser ?: return@withContext AuthResult.Error(
+                "Please sign in first.",
+                "অনুগ্রহ করে আগে লগইন করুন।"
+            )
+            user.reload().await()
+            if (user.isEmailVerified) {
+                val profile = refreshSessionAndSyncFirestore()
+                return@withContext AuthResult.Success(profile)
+            }
+            user.sendEmailVerification().await()
+            AuthResult.Success(_currentUser.value)
         } catch (e: Throwable) {
             mapFirebaseAuthException(e)
         }
@@ -223,6 +247,7 @@ class AuthRepository @Inject constructor(
             "Firebase চালু হয়নি।"
         )
         try {
+            auth.useAppLanguage()
             auth.sendPasswordResetEmail(email.trim()).await()
             AuthResult.Success(_currentUser.value)
         } catch (e: Throwable) {

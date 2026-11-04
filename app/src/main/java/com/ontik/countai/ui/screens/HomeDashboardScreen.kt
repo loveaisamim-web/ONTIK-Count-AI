@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ontik.countai.domain.model.AppLanguage
+import com.ontik.countai.ui.components.AdMobBannerCard
 import com.ontik.countai.ui.theme.OntikAmberAccent
 import com.ontik.countai.ui.theme.OntikGreenPrimary
 import com.ontik.countai.ui.viewmodel.CountViewModel
@@ -210,6 +211,8 @@ fun HomeDashboardScreen(
                 Text(if (isBn) "সেটিংস (Settings)" else "Settings")
             }
         }
+
+        AdMobBannerCard(isVisible = true)
     }
 }
 
@@ -263,5 +266,7 @@ fun LegalDocumentScreen(
                 }
             }
         }
+
+        AdMobBannerCard(isVisible = true)
     }
 }

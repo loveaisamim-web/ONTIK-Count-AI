@@ -1,7 +1,6 @@
 package com.ontik.countai.ui.screens
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -82,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.ontik.countai.domain.model.AppLanguage
+import com.ontik.countai.ui.components.AdMobBannerCard
 import com.ontik.countai.ui.components.CameraPreviewWithZoneOverlay
 import com.ontik.countai.ui.theme.AppStrings
 import com.ontik.countai.ui.theme.DangerRed
@@ -104,7 +104,6 @@ fun LiveCountingScreen(
     onNavigateToProfile: () -> Unit
 ) {
     val context = LocalContext.current
-    val activity = context as? Activity
     val view = LocalView.current
     val uiState by viewModel.uiState.collectAsState()
     val settings by viewModel.settings.collectAsState()
@@ -172,6 +171,9 @@ fun LiveCountingScreen(
         EngineStatus.PAUSED -> AppStrings.statusPaused(lang)
     }
 
+    // See-through glassmorphic background (alpha ~ 0.42f) so camera is clearly visible through all boxes!
+    val clearGlassBg = Color(0x6B0F172A)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -198,7 +200,6 @@ fun LiveCountingScreen(
                 onRoiAndLinesUpdated = viewModel::updateRoiAndLines
             )
         } else {
-            // P6 Fix: Handle both normal and permanently denied camera permission
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -243,24 +244,24 @@ fun LiveCountingScreen(
             }
         }
 
-        // 2. Clean Top Bar (Zero PRO badge clutter)
+        // 2. Fixed-Size See-Through Top Bar (Never resizes when changing items!)
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Card(
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xCC0F172A)),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = clearGlassBg),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -269,55 +270,50 @@ fun LiveCountingScreen(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.weight(1f)
                         ) {
                             Text(
                                 text = "ONTIK Count AI",
                                 color = Color.White,
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 15.sp,
+                                fontSize = 14.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
 
                             Surface(
-                                color = statusColor.copy(alpha = 0.18f),
+                                color = statusColor.copy(alpha = 0.22f),
                                 shape = RoundedCornerShape(50),
-                                border = BorderStroke(1.dp, statusColor.copy(alpha = 0.7f))
+                                border = BorderStroke(1.dp, statusColor.copy(alpha = 0.75f))
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(7.dp)
+                                            .size(6.dp)
                                             .clip(CircleShape)
                                             .background(statusColor)
                                     )
                                     Text(
                                         text = statusLabel,
                                         color = statusColor,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
                                     )
                                 }
                             }
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = onNavigateToHome,
-                                modifier = Modifier.size(34.dp)
-                            ) {
+                            IconButton(onClick = onNavigateToHome, modifier = Modifier.size(32.dp)) {
                                 Icon(Icons.Default.Home, contentDescription = "Home", tint = Color.White)
                             }
-                            IconButton(
-                                onClick = viewModel::toggleTorch,
-                                modifier = Modifier.size(34.dp)
-                            ) {
+                            IconButton(onClick = viewModel::toggleTorch, modifier = Modifier.size(32.dp)) {
                                 Icon(
                                     imageVector = if (uiState.torchEnabled) OntikIcons.FlashOn else OntikIcons.FlashOff,
                                     contentDescription = "Torch",
@@ -326,7 +322,7 @@ fun LiveCountingScreen(
                             }
                             IconButton(
                                 onClick = { viewModel.updateShowDebugMask(!settings.showDebugMask) },
-                                modifier = Modifier.size(34.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
                                     imageVector = OntikIcons.BugMask,
@@ -334,22 +330,13 @@ fun LiveCountingScreen(
                                     tint = if (settings.showDebugMask) OntikGreenBright else Color.White
                                 )
                             }
-                            IconButton(
-                                onClick = onNavigateToHistory,
-                                modifier = Modifier.size(34.dp)
-                            ) {
+                            IconButton(onClick = onNavigateToHistory, modifier = Modifier.size(32.dp)) {
                                 Icon(OntikIcons.History, contentDescription = "History", tint = Color.White)
                             }
-                            IconButton(
-                                onClick = onNavigateToProfile,
-                                modifier = Modifier.size(34.dp)
-                            ) {
+                            IconButton(onClick = onNavigateToProfile, modifier = Modifier.size(32.dp)) {
                                 Icon(Icons.Default.Person, contentDescription = "Profile", tint = Color.White)
                             }
-                            IconButton(
-                                onClick = onNavigateToSettings,
-                                modifier = Modifier.size(34.dp)
-                            ) {
+                            IconButton(onClick = onNavigateToSettings, modifier = Modifier.size(32.dp)) {
                                 Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
                             }
                         }
@@ -357,50 +344,57 @@ fun LiveCountingScreen(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Row 2: Preset name + FPS + Self-Test Diagnostics button + 100-Test button
+                    // Row 2: Fixed single-line short preset title + FPS + Self-Test + 100 Test (Never wraps or resizes!)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(26.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
                             BadgePill(
-                                text = settings.activePreset.title(lang),
+                                text = settings.activePreset.shortTitle(lang),
                                 textColor = OntikGreenBright,
-                                bgColor = OntikGreenPrimary.copy(alpha = 0.25f)
+                                bgColor = OntikGreenPrimary.copy(alpha = 0.28f)
                             )
                             BadgePill(
                                 text = "${uiState.currentFps} FPS",
                                 textColor = Color.White,
-                                bgColor = Color.White.copy(alpha = 0.14f)
+                                bgColor = Color.White.copy(alpha = 0.16f)
                             )
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                             Surface(
                                 onClick = { showDiagnosticsDialog = true },
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color.White.copy(alpha = 0.14f)
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.White.copy(alpha = 0.16f)
                             ) {
                                 Text(
-                                    text = if (isBn) "ডায়াগনস্টিকস" else "Self-Test",
+                                    text = if (isBn) "টেস্ট ইনফো" else "Self-Test",
                                     color = OntikAmberAccent,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
                             }
 
                             Surface(
                                 onClick = viewModel::toggleTestMode100,
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (uiState.isTestMode100Active) OntikAmberAccent else Color.White.copy(alpha = 0.14f)
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (uiState.isTestMode100Active) OntikAmberAccent else Color.White.copy(alpha = 0.16f)
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
@@ -408,13 +402,14 @@ fun LiveCountingScreen(
                                         imageVector = OntikIcons.ScienceTest,
                                         contentDescription = "100-Grain Test Mode",
                                         tint = if (uiState.isTestMode100Active) Color.Black else Color.White,
-                                        modifier = Modifier.size(12.dp)
+                                        modifier = Modifier.size(11.dp)
                                     )
                                     Text(
                                         text = if (isBn) "১০০ টেস্ট" else "100 Test",
                                         color = if (uiState.isTestMode100Active) Color.Black else Color.White,
                                         fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
                                     )
                                 }
                             }
@@ -422,13 +417,13 @@ fun LiveCountingScreen(
                     }
 
                     if (uiState.status == EngineStatus.CALIBRATING) {
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         LinearProgressIndicator(
                             progress = { uiState.calibrationProgress },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(5.dp)
-                                .clip(RoundedCornerShape(3.dp)),
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp)),
                             color = OntikAmberAccent,
                             trackColor = Color.White.copy(alpha = 0.2f)
                         )
@@ -436,7 +431,7 @@ fun LiveCountingScreen(
                 }
             }
 
-            // Helpful single-line hint only when needed
+            // Helpful single-line hint (See-through)
             val activeHint = if (isBn) uiState.contextualHintBn else uiState.contextualHintEn
             AnimatedVisibility(
                 visible = activeHint != null,
@@ -444,41 +439,43 @@ fun LiveCountingScreen(
                 exit = fadeOut() + slideOutVertically()
             ) {
                 Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xD91E293B)),
-                    border = BorderStroke(1.dp, OntikAmberAccent.copy(alpha = 0.7f)),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = clearGlassBg),
+                    border = BorderStroke(1.dp, OntikAmberAccent.copy(alpha = 0.6f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = activeHint ?: "",
                         color = OntikAmberAccent,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     )
                 }
             }
         }
 
-        // 3. Bottom Counter & Action Controls Card
+        // 3. See-Through Bottom Counter Card + AdMob Banner
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             if (settings.batchModeEnabled) {
                 Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xD91E293B)),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = clearGlassBg),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -490,19 +487,19 @@ fun LiveCountingScreen(
                             },
                             color = OntikAmberAccent,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
+                            fontSize = 12.sp
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             TextButton(
                                 onClick = viewModel::saveCurrentBatchAndResetCounter,
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                             ) {
                                 Text(if (isBn) "+ ব্যাচ যোগ" else "+ Add Batch", color = OntikGreenBright, fontSize = 12.sp)
                             }
                             if (uiState.batches.isNotEmpty()) {
                                 TextButton(
                                     onClick = viewModel::clearAllBatches,
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
                                 ) {
                                     Text(if (isBn) "ক্লিয়ার" else "Clear", color = DangerRed, fontSize = 12.sp)
                                 }
@@ -513,15 +510,15 @@ fun LiveCountingScreen(
             }
 
             Card(
-                shape = RoundedCornerShape(26.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xE60F172A)),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = clearGlassBg),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -544,9 +541,9 @@ fun LiveCountingScreen(
                                 Text(
                                     text = "$countVal",
                                     color = Color.White,
-                                    fontSize = 54.sp,
+                                    fontSize = 48.sp,
                                     fontWeight = FontWeight.ExtraBold,
-                                    lineHeight = 56.sp,
+                                    lineHeight = 50.sp,
                                     modifier = Modifier.scale(numberScale)
                                 )
                             }
@@ -557,7 +554,7 @@ fun LiveCountingScreen(
                                     inZone = uiState.inZoneGrainCount,
                                     ratePerSec = uiState.countRatePerSec
                                 ),
-                                color = Color.White.copy(alpha = 0.72f),
+                                color = Color.White.copy(alpha = 0.85f),
                                 fontSize = 12.sp
                             )
                         }
@@ -568,9 +565,9 @@ fun LiveCountingScreen(
                         ) {
                             FilledIconButton(
                                 onClick = viewModel::undoLastCount,
-                                modifier = Modifier.size(42.dp),
+                                modifier = Modifier.size(40.dp),
                                 colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = Color.White.copy(alpha = 0.12f),
+                                    containerColor = Color.White.copy(alpha = 0.18f),
                                     contentColor = Color.White
                                 )
                             ) {
@@ -579,9 +576,9 @@ fun LiveCountingScreen(
 
                             FilledIconButton(
                                 onClick = { viewModel.adjustCountManually(-1) },
-                                modifier = Modifier.size(44.dp),
+                                modifier = Modifier.size(42.dp),
                                 colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = Color.White.copy(alpha = 0.14f),
+                                    containerColor = Color.White.copy(alpha = 0.20f),
                                     contentColor = Color.White
                                 )
                             ) {
@@ -590,7 +587,7 @@ fun LiveCountingScreen(
 
                             FilledIconButton(
                                 onClick = { viewModel.adjustCountManually(+1) },
-                                modifier = Modifier.size(44.dp),
+                                modifier = Modifier.size(42.dp),
                                 colors = IconButtonDefaults.filledIconButtonColors(
                                     containerColor = OntikGreenPrimary,
                                     contentColor = Color.White
@@ -601,7 +598,7 @@ fun LiveCountingScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -613,7 +610,7 @@ fun LiveCountingScreen(
                             onClick = viewModel::toggleStartPause,
                             modifier = Modifier
                                 .weight(1.25f)
-                                .height(46.dp),
+                                .height(44.dp),
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isCounting) OntikAmberDark else OntikGreenPrimary,
@@ -630,7 +627,8 @@ fun LiveCountingScreen(
                             Text(
                                 text = if (isCounting) AppStrings.btnPause(lang) else AppStrings.btnStart(lang),
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
+                                fontSize = 14.sp,
+                                maxLines = 1
                             )
                         }
 
@@ -638,16 +636,16 @@ fun LiveCountingScreen(
                             onClick = viewModel::triggerAutoCalibrate,
                             modifier = Modifier
                                 .weight(1.15f)
-                                .height(46.dp),
+                                .height(44.dp),
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, OntikAmberAccent.copy(alpha = 0.8f)),
+                            border = BorderStroke(1.dp, OntikAmberAccent),
                             contentPadding = PaddingValues(horizontal = 8.dp)
                         ) {
                             Icon(
                                 imageVector = OntikIcons.CalibrateTarget,
                                 contentDescription = null,
                                 tint = OntikAmberAccent,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(5.dp))
                             Text(
@@ -667,10 +665,10 @@ fun LiveCountingScreen(
                                     viewModel.resetCount()
                                 }
                             },
-                            modifier = Modifier.size(46.dp),
+                            modifier = Modifier.size(44.dp),
                             shape = RoundedCornerShape(14.dp),
                             colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = Color.White.copy(alpha = 0.14f),
+                                containerColor = Color.White.copy(alpha = 0.18f),
                                 contentColor = Color.White
                             )
                         ) {
@@ -687,7 +685,7 @@ fun LiveCountingScreen(
                                 }
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                             },
-                            modifier = Modifier.size(46.dp),
+                            modifier = Modifier.size(44.dp),
                             shape = RoundedCornerShape(14.dp),
                             colors = IconButtonDefaults.filledIconButtonColors(
                                 containerColor = OntikGreenPrimary.copy(alpha = 0.85f),
@@ -699,9 +697,12 @@ fun LiveCountingScreen(
                     }
                 }
             }
+
+            // AdMob Banner Ad on Live Counting Screen too as requested ("অ্যাডস সব জায়গায় থাকবে")
+            AdMobBannerCard(isVisible = true)
         }
 
-        // 4. P4 Fix: 100% Online Requirement Dialog (Blocks usage when Wi-Fi / Mobile Data is OFF)
+        // 4. 100% Online Requirement Dialog
         if (!uiState.isOnline) {
             AlertDialog(
                 onDismissRequest = { viewModel.refreshOnlineStatus() },
@@ -792,7 +793,7 @@ fun LiveCountingScreen(
                         DiagRow("Surface Brightness / Noise", String.format(Locale.US, "Lum: %.1f | Noise: %.2f", uiState.meanLuminance, uiState.noiseStd))
                         DiagRow("Detection Threshold", String.format(Locale.US, "Auto: %.1f | Effective: %.1f", uiState.autoThresholdValue, uiState.effectiveThresholdValue))
                         DiagRow("Learned Single Grain Size", String.format(Locale.US, "%.0f px²", uiState.learnedSingleGrainAreaPx))
-                        DiagRow("Raw Contours -> Valid Blobs", "${uiState.rawContourCount} -> ${uiState.inZoneGrainCount} (Rejected Area: ${uiState.rejectedByAreaCount}, Shape: ${uiState.rejectedByShapeCount})")
+                        DiagRow("Raw Contours -> Valid Blobs", "${uiState.rawContourCount} -> ${uiState.inZoneGrainCount}")
                         DiagRow("Active Kalman Tracks", "${uiState.trackedGrains.size}")
                         DiagRow("Total Counted", "${uiState.totalCount}")
                     }
@@ -922,6 +923,8 @@ private fun BadgePill(
             color = textColor,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
         )
     }

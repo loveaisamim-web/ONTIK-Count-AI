@@ -483,7 +483,7 @@ class OpenCvGrainProcessor {
                 )
             }
             // Cap per-blob count to [1..3] so no single contour ever adds +19 or +20
-            val estimatedCount = rawEstCount.coerceIn(1, 3)
+            val estimatedCount = 1
             if (isClump) clumpCount++
 
             val normLeft = ((roiX + boundRect.x).toFloat() / frameW).coerceIn(0f, 1f)

@@ -297,6 +297,29 @@ class CountViewModel @Inject constructor(
         }
     }
 
+    fun resendVerificationEmail(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val lang = settings.value.language
+            when (val res = authRepository.resendEmailVerification()) {
+                is AuthResult.Success -> {
+                    val msg = if (res.profile.isEmailVerified) {
+                        if (lang == AppLanguage.BANGLA) "আপনার ইমেইল ইতিমধ্যেই ভেরিফাইড!" else "Your email is already verified!"
+                    } else {
+                        if (lang == AppLanguage.BANGLA) {
+                            "ভেরিফিকেশন ইমেইল আবার পাঠানো হয়েছে! Gmail-এর Inbox বা Spam ফোল্ডার চেক করুন।"
+                        } else {
+                            "Verification email sent! Please check your Gmail Inbox or Spam folder."
+                        }
+                    }
+                    onResult(true, msg)
+                }
+                is AuthResult.Error -> {
+                    onResult(false, if (lang == AppLanguage.BANGLA) res.messageBn else res.messageEn)
+                }
+            }
+        }
+    }
+
     fun sendPasswordResetEmail(email: String, onSent: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             val lang = settings.value.language
@@ -604,7 +627,10 @@ class CountViewModel @Inject constructor(
         val list = historySessions.value
         if (list.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
-            val file = PdfReportGenerator.generateSessionReportPdf(getApplication(), list)
+            val file = PdfReportGenerator.generateSessionReportPdf(
+                context = getApplication(),
+                sessions = list
+            )
             withContext(Dispatchers.Main) {
                 SessionExportHelper.shareExportedFile(getApplication(), file, "application/pdf")
             }

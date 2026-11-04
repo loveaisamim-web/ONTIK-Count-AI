@@ -48,7 +48,7 @@ data class AppSettings(
     val targetCountGoal: Int = 0,
     val batchModeEnabled: Boolean = false,
     val completedSessionsCountForReview: Int = 0,
-    val roiRect: NormalizedRect = NormalizedRect(0.10f, 0.16f, 0.90f, 0.82f),
+    val roiRect: NormalizedRect = NormalizedRect(0.08f, 0.22f, 0.92f, 0.68f),
     val lineAPosition: Float = 0.50f,
     val lineBPosition: Float = 0.68f
 )
@@ -115,9 +115,9 @@ class SettingsRepository @Inject constructor(
         val dir = CountingDirection.entries.firstOrNull { it.name == dirName } ?: CountingDirection.TOP_TO_BOTTOM
 
         val left = (prefs[Keys.ROI_LEFT] ?: 0.10f).coerceIn(0.04f, 0.75f)
-        val top = (prefs[Keys.ROI_TOP] ?: 0.16f).coerceIn(0.04f, 0.75f)
-        val right = (prefs[Keys.ROI_RIGHT] ?: 0.90f).coerceIn(left + 0.18f, 0.96f)
-        val bottom = (prefs[Keys.ROI_BOTTOM] ?: 0.82f).coerceIn(top + 0.18f, 0.96f)
+        val top = (prefs[Keys.ROI_TOP] ?: 0.22f).coerceIn(0.16f, 0.60f)
+        val right = (prefs[Keys.ROI_RIGHT] ?: 0.92f).coerceIn(left + 0.20f, 0.96f)
+        val bottom = (prefs[Keys.ROI_BOTTOM] ?: 0.68f).coerceIn(top + 0.18f, 0.74f)
 
         AppSettings(
             language = lang,
