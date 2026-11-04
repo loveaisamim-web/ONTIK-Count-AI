@@ -33,11 +33,13 @@ class OntikCountApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
+        // 1. Initialize 100% offline OpenCV native engine immediately
         try {
             OpenCVLoader.initLocal()
         } catch (_: Throwable) {
         }
 
+        // 2. Initialize Google Mobile Ads (AdMob) strictly on a background IO thread
         appInitScope.launch {
             try {
                 MobileAds.initialize(this@OntikCountApp)
@@ -45,6 +47,7 @@ class OntikCountApp : Application(), Configuration.Provider {
             }
         }
 
+        // 3. Schedule periodic background SyncWorker for Pro accounts
         try {
             SyncWorker.schedulePeriodicSync(this)
         } catch (_: Throwable) {

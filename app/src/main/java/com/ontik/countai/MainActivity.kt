@@ -24,9 +24,15 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        try { installSplashScreen() } catch (_: Throwable) {}
+        try {
+            installSplashScreen()
+        } catch (_: Throwable) {
+        }
         super.onCreate(savedInstanceState)
-        try { enableEdgeToEdge() } catch (_: Throwable) {}
+        try {
+            enableEdgeToEdge()
+        } catch (_: Throwable) {
+        }
 
         setContent {
             val countViewModel: CountViewModel = hiltViewModel()
@@ -55,10 +61,5 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Reconcile Billing & Firestore on app resume when online
     }
 }

@@ -19,7 +19,7 @@ val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
 val gsFile = file("google-services.json")
 val hasWebClientInGoogleServices = gsFile.exists() &&
-    Regex(""""client_type"\\s*:\\s*3""").containsMatchIn(gsFile.readText())
+    Regex(""""client_type"\s*:\s*3""").containsMatchIn(gsFile.readText())
 
 val bundledJksFile = file("ontik-release-key.jks")
 
@@ -41,6 +41,7 @@ android {
 
         manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
 
+        // 64-bit & ARM optimization for Play Store .aab and fast .apk downloads
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
@@ -85,6 +86,7 @@ android {
                 signingConfigs.getByName("debug")
             }
 
+            // Real AdMob App ID & Real Banner Ad Unit ID ONLY in release builds
             manifestPlaceholders["admobAppId"] = "ca-app-pub-9544511312663053~8782253318"
             buildConfigField("String", "ADMOB_APP_ID", "\"ca-app-pub-9544511312663053~8782253318\"")
             buildConfigField("String", "ADMOB_BANNER_UNIT_ID", "\"ca-app-pub-9544511312663053/2332395038\"")
@@ -95,6 +97,7 @@ android {
             )
         }
         debug {
+            // Always sign with permanent keystore if present, or fallback to standard debug key so APK is NEVER unsigned
             signingConfig = if (bundledJksFile.exists() || keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("ontikPermanent")
             } else {
@@ -102,6 +105,7 @@ android {
             }
             isDebuggable = true
 
+            // Official Google Test App ID & Test Banner Ad Unit ID in debug builds
             manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
             buildConfigField("String", "ADMOB_APP_ID", "\"ca-app-pub-3940256099942544~3347511713\"")
             buildConfigField("String", "ADMOB_BANNER_UNIT_ID", "\"ca-app-pub-3940256099942544/9214589741\"")
@@ -140,6 +144,7 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(platform(libs.androidx.compose.bom))
 
+    // Core & Splash Screen
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -147,6 +152,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
 
+    // Compose UI & Material 3
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
@@ -154,6 +160,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.navigation.compose)
 
+    // Hilt Dependency Injection + WorkManager
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
@@ -161,37 +168,44 @@ dependencies {
     ksp(libs.androidx.hilt.compiler)
     implementation(libs.androidx.work.runtime.ktx)
 
+    // CameraX & OpenCV 4.9.0
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.opencv)
 
+    // Room Database & Encrypted SharedPreferences / DataStore
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.security.crypto)
 
+    // Firebase BoM, Auth, Firestore, Remote Config, Analytics
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.firestore.ktx)
     implementation(libs.firebase.config.ktx)
     implementation(libs.firebase.analytics.ktx)
 
+    // Google Sign-In: Play Services Auth + Credential Manager API + Google ID
     implementation(libs.play.services.auth)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)
 
+    // RevenueCat Play Billing, In-App Review, In-App Updates, Google Mobile Ads (AdMob)
     implementation(libs.revenuecat.purchases)
     implementation(libs.play.review.ktx)
     implementation(libs.play.app.update.ktx)
     implementation(libs.play.services.ads)
 
+    // Coroutines & Utilities
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.androidx.exifinterface)
 
+    // Unit Testing
     testImplementation(libs.junit)
 }

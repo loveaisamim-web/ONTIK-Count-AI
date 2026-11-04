@@ -332,7 +332,7 @@ fun LiveCountingScreen(
                                 }
                             ) {
                                 Text(
-                                    text = if (planState.isEffectivePro) "PRO" else "Today: ${planState.todayUsedCount}/${planState.freeDailyLimit}",
+                                    text = if (planState.isEffectivePro) "PRO" else if (isBn) "আজ: ${planState.todayUsedCount} (আনলিমিটেড)" else "Today: ${planState.todayUsedCount} (Unlimited)",
                                     color = if (planState.isEffectivePro) Color.Black else Color.White,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.ExtraBold,
@@ -368,7 +368,7 @@ fun LiveCountingScreen(
                     }
 
                     // Free Daily Limit Progress Bar ("Today: 320 / 500")
-                    if (!planState.isEffectivePro) {
+                    if (false) {
                         Spacer(modifier = Modifier.height(5.dp))
                         val quotaProgress = (planState.todayUsedCount.toFloat() / planState.freeDailyLimit.coerceAtLeast(1)).coerceIn(0f, 1f)
                         LinearProgressIndicator(

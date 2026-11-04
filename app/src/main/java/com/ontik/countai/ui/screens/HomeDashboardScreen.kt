@@ -182,9 +182,9 @@ fun HomeDashboardScreen(
                     val progress = (planState.todayUsedCount.toFloat() / planState.freeDailyLimit.coerceAtLeast(1)).coerceIn(0f, 1f)
                     Text(
                         text = if (isBn) {
-                            "আজকের ফ্রি কোটা: ${planState.todayUsedCount} / ${planState.freeDailyLimit}"
+                            "আজকের গণনা: ${planState.todayUsedCount} (ফ্রি আনলিমিটেড)"
                         } else {
-                            "Today's Free Quota: ${planState.todayUsedCount} / ${planState.freeDailyLimit}"
+                            "Today's Count: ${planState.todayUsedCount} (Free Unlimited)"
                         },
                         style = MaterialTheme.typography.bodyMedium
                     )

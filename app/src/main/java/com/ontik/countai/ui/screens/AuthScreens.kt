@@ -424,19 +424,36 @@ fun AuthSignUpScreen(
         )
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { acceptedTerms = !acceptedTerms },
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
                 checked = acceptedTerms,
                 onCheckedChange = { acceptedTerms = it }
             )
-            Text(
-                text = if (isBn) "আমি শর্তাবলী ও গোপনীয়তা নীতি মেনে নিচ্ছি (Accept Terms & Privacy Policy)" else "I accept the Terms of Service & Privacy Policy",
-                fontSize = 13.sp
-            )
+            Column {
+                Text(
+                    text = if (isBn) "আমি শর্তাবলী ও গোপনীয়তা নীতি মেনে নিচ্ছি" else "I accept the Terms of Service & Privacy Policy",
+                    fontSize = 13.sp,
+                    modifier = Modifier.clickable { acceptedTerms = !acceptedTerms }
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Terms of Service",
+                        color = OntikGreenPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { onOpenTerms() }
+                    )
+                    Text(
+                        text = "Privacy Policy",
+                        color = OntikGreenPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { onOpenPrivacy() }
+                    )
+                }
+            }
         }
 
         Button(

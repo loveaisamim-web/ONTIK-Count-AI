@@ -138,7 +138,7 @@ class PlanManager @Inject constructor(
         val isPro = s.isEffectivePro
 
         return when (feature) {
-            GatedFeature.UNLIMITED_DAILY_COUNTING -> isPro || !s.isDailyLimitReached
+            GatedFeature.UNLIMITED_DAILY_COUNTING -> true
             GatedFeature.UNLIMITED_HISTORY -> isPro
             GatedFeature.CSV_EXPORT -> isPro
             GatedFeature.PDF_EXPORT -> isPro
@@ -172,11 +172,11 @@ class PlanManager @Inject constructor(
             return addedCount
         }
 
-        val allowed = addedCount.coerceAtMost(current.remainingToday)
-        val nextUsed = current.todayUsedCount + allowed
+        // Free version also supports unlimited daily counting without capping
+        val nextUsed = current.todayUsedCount + addedCount
         persistDailyUsage(current.todayDateIso, nextUsed)
         _planState.update { it.copy(todayUsedCount = nextUsed) }
-        return allowed
+        return addedCount
     }
 
     /**

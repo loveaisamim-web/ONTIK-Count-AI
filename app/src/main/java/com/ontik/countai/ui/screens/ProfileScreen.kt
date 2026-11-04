@@ -226,7 +226,7 @@ fun ProfileScreen(
                     text = if (planState.isEffectivePro) {
                         if (isBn) "আজকের গণনা: ${planState.todayUsedCount} (আনলিমিটেড প্রো)" else "Today's count: ${planState.todayUsedCount} (Unlimited PRO)"
                     } else {
-                        if (isBn) "আজকের ফ্রি লিমিট: ${planState.todayUsedCount} / ${planState.freeDailyLimit}" else "Today's Free Limit: ${planState.todayUsedCount} / ${planState.freeDailyLimit}"
+                        if (isBn) "আজকের গণনা: ${planState.todayUsedCount} (ফ্রি আনলিমিটেড)" else "Today's Count: ${planState.todayUsedCount} (Free Unlimited)"
                     },
                     style = MaterialTheme.typography.bodyLarge
                 )

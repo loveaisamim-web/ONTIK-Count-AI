@@ -258,7 +258,7 @@ class OpenCvGrainProcessor {
                 diffMean.release()
                 diffStd.release()
                 estimatedNoiseStd = (0.8 * estimatedNoiseStd + 0.2 * s).coerceIn(1.5, 15.0)
-                autoBaseThreshold = max(m + 4.0 * estimatedNoiseStd, 12.0)
+                autoBaseThreshold = max(m + 4.5 * estimatedNoiseStd, 22.0)
             }
 
             calibrationFrameCount++
@@ -332,7 +332,7 @@ class OpenCvGrainProcessor {
         // Step 4: Adaptive Thresholding + Soft Shadow Rejection
         // sensitivity in [0.10 .. 0.90]: higher sensitivity = lower threshold
         val sensitivityScale = (1.45 - sensitivity.coerceIn(0.10f, 0.90f) * 1.05).coerceIn(0.45, 1.40)
-        val effectiveThresh = (autoBaseThreshold * sensitivityScale).coerceIn(10.0, 68.0)
+        val effectiveThresh = (autoBaseThreshold * sensitivityScale).coerceIn(18.0, 72.0)
 
         Imgproc.threshold(combinedDiffMat!!, binaryMaskMat!!, effectiveThresh, 255.0, Imgproc.THRESH_BINARY)
 
@@ -366,6 +366,32 @@ class OpenCvGrainProcessor {
         Imgproc.morphologyEx(morphMaskMat!!, morphMaskMat!!, Imgproc.MORPH_CLOSE, morphKernel)
         morphKernel.release()
 
+        // Global Camera Shake / Background Shift Guard:
+        // If > 22% of the entire ROI lights up at once, the camera is moving over a textured surface (not falling grains).
+        val fgPixels = Core.countNonZero(morphMaskMat!!)
+        val fgRatio = fgPixels.toDouble() / (roiW * roiH).coerceAtLeast(1).toDouble()
+        if (fgRatio > 0.22) {
+            Imgproc.accumulateWeighted(roiGrayMat!!, bgGrayFloatMat!!, 0.22)
+            Imgproc.accumulateWeighted(roiLabMat!!, bgLabFloatMat!!, 0.22)
+            bgGrayFloatMat!!.convertTo(bgGray8UMat!!, CvType.CV_8U)
+            bgLabFloatMat!!.convertTo(bgLab8UMat!!, CvType.CV_8UC3)
+            return FrameAnalysisResult(
+                blobs = emptyList(),
+                isCalibrating = false,
+                calibrationProgress = 1f,
+                isCalibrated = true,
+                autoThresholdValue = effectiveThresh,
+                noiseStd = estimatedNoiseStd,
+                learnedSingleGrainAreaPx = learnedSingleGrainAreaPx,
+                suddenBrightnessShiftDetected = false,
+                contextualHintEn = "Keep camera steady above surface",
+                contextualHintBn = "ক্যামেরা স্থির রাখুন অথবা খালি জায়গায় ক্যালিব্রেট চাপুন",
+                confidenceLevel = AccuracyConfidenceLevel.FAIR,
+                debugMaskBitmap = null,
+                processingTimeMs = SystemClock.elapsedRealtime() - startMs
+            )
+        }
+
         // Step 6: External Contour Extraction + Shape Filtering + Sub-Pixel Moments + Touching Grain Splitting
         val contours = ArrayList<MatOfPoint>()
         Imgproc.findContours(
@@ -385,9 +411,10 @@ class OpenCvGrainProcessor {
         val detectedBlobs = ArrayList<GrainBlob>()
         var clumpCount = 0
 
+        val maxRealisticBlobArea = min(maxAreaPx.toDouble(), (effectiveSingleArea * 12.0).coerceAtLeast(600.0))
         for (contour in contours) {
             val area = Imgproc.contourArea(contour)
-            if (area < minAreaPx || area > maxAreaPx) {
+            if (area < minAreaPx || area > maxRealisticBlobArea) {
                 contour.release()
                 continue
             }
@@ -408,7 +435,7 @@ class OpenCvGrainProcessor {
             hullMat.release()
 
             // Filter out dust, thin ruled lines, or fingers (require reasonable solidity and extent)
-            if (solidity < 0.32 || extent < 0.18 || aspectRatio < 0.12 || aspectRatio > 8.5) {
+            if (solidity < 0.55 || extent < 0.32 || aspectRatio < 0.22 || aspectRatio > 4.5) {
                 contour.release()
                 continue
             }

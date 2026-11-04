@@ -194,7 +194,7 @@ fun PaywallScreen(
 
                 ComparisonRow(
                     feature = if (isBn) "দৈনিক গণনা লিমিট" else "Daily Counting Limit",
-                    freeVal = "${planState.freeDailyLimit}/day",
+                    freeVal = if (isBn) "আনলিমিটেড" else "Unlimited",
                     proVal = if (isBn) "আনলিমিটেড" else "Unlimited"
                 )
                 ComparisonRow(

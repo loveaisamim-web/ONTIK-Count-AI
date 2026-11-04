@@ -675,7 +675,7 @@ class CountViewModel @Inject constructor(
                     val prevStatus = _uiState.value.status
                     val nextStatus = when {
                         cvOut.isCalibrating -> EngineStatus.CALIBRATING
-                        prevStatus == EngineStatus.CALIBRATING && cvOut.isCalibrated -> EngineStatus.COUNTING
+                        prevStatus == EngineStatus.CALIBRATING && cvOut.isCalibrated -> EngineStatus.READY
                         else -> prevStatus
                     }
 
@@ -700,7 +700,7 @@ class CountViewModel @Inject constructor(
                         0
                     }
 
-                    val hitFreeLimitNow = rawAdded > 0 && allowedAdded < rawAdded && !planManager.canUse(GatedFeature.UNLIMITED_DAILY_COUNTING)
+                    val hitFreeLimitNow = false
 
                     if (allowedAdded > 0) {
                         countUndoStack.addLast(allowedAdded)
