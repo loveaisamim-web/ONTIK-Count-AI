@@ -13,7 +13,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.FirebaseApp
 import com.google.firebase.analytics.FirebaseAnalytics
-import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.ontik.countai.BuildConfig
 import com.ontik.countai.auth.AuthRepository
@@ -174,7 +173,7 @@ class CountViewModel @Inject constructor(
                 billingRepository.linkFirebaseUser(profile.uid)
                 try {
                     if (FirebaseApp.getApps(getApplication()).isNotEmpty()) {
-                        FirebaseCrashlytics.getInstance().setUserId(profile.uid)
+                        // Crashlytics omitted
                     }
                 } catch (_: Throwable) {
                 }

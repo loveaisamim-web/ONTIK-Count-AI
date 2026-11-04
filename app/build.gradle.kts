@@ -176,8 +176,6 @@ dependencies {
     implementation(libs.firebase.firestore.ktx)
     implementation(libs.firebase.config.ktx)
     implementation(libs.firebase.analytics.ktx)
-    implementation(libs.firebase.crashlytics.ktx)
-    implementation(libs.firebase.appcheck.playintegrity)
 
     // Google Sign-In: Play Services Auth + Credential Manager API + Google ID
     implementation(libs.play.services.auth)

@@ -24,9 +24,9 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        try { installSplashScreen() } catch (_: Throwable) {}
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        try { enableEdgeToEdge() } catch (_: Throwable) {}
 
         setContent {
             val countViewModel: CountViewModel = hiltViewModel()

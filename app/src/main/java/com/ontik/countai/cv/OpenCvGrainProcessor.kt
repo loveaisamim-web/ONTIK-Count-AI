@@ -104,13 +104,13 @@ class OpenCvGrainProcessor {
 
     private val labChannels = ArrayList<Mat>(3)
     private val bgLabChannels = ArrayList<Mat>(3)
-    private val diffChannelA = Mat()
-    private val diffChannelB = Mat()
-    private val diffChannelL = Mat()
-    private val chromaDiffMat = Mat()
-    private val gradXMat = Mat()
-    private val gradYMat = Mat()
-    private val gradMagMat = Mat()
+    private val diffChannelA by lazy { ensureOpenCvLoaded(); Mat() }
+    private val diffChannelB by lazy { ensureOpenCvLoaded(); Mat() }
+    private val diffChannelL by lazy { ensureOpenCvLoaded(); Mat() }
+    private val chromaDiffMat by lazy { ensureOpenCvLoaded(); Mat() }
+    private val gradXMat by lazy { ensureOpenCvLoaded(); Mat() }
+    private val gradYMat by lazy { ensureOpenCvLoaded(); Mat() }
+    private val gradMagMat by lazy { ensureOpenCvLoaded(); Mat() }
 
     private var lastRoiWidth = 0
     private var lastRoiHeight = 0
