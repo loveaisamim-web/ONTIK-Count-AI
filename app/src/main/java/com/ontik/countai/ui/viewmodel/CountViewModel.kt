@@ -604,11 +604,7 @@ class CountViewModel @Inject constructor(
         val list = historySessions.value
         if (list.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
-            val file = PdfReportGenerator.generateBrandedPdfReport(
-                context = getApplication(),
-                sessions = list,
-                userProfile = currentUser.value
-            )
+            val file = PdfReportGenerator.generateSessionReportPdf(getApplication(), list)
             withContext(Dispatchers.Main) {
                 SessionExportHelper.shareExportedFile(getApplication(), file, "application/pdf")
             }
